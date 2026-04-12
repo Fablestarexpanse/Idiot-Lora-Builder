@@ -7,6 +7,7 @@ import { ImagePreviewModal } from "./components/preview/ImagePreviewModal";
 import { CropModal } from "./components/preview/CropModal";
 import { ProjectLoadOverlay } from "./components/project/ProjectLoadOverlay";
 import { RestorePreviousFolderPrompt } from "./components/project/RestorePreviousFolderPrompt";
+import { GridDebugPanel } from "./components/grid/GridDebugPanel";
 import { useUiStore } from "./stores/uiStore";
 import { useRatingShortcuts } from "./hooks/useRatingShortcuts";
 
@@ -28,9 +29,9 @@ function App() {
   }, []);
 
   return (
-    <div className="flex h-screen flex-col bg-surface">
+    <div className="flex h-screen min-w-0 flex-col overflow-x-hidden bg-surface">
       <Toolbar />
-      <main className="flex flex-1 min-h-0">
+      <main className="flex min-h-0 min-w-0 flex-1 overflow-x-hidden">
         <AppLayout />
       </main>
       <StatusBar />
@@ -41,6 +42,7 @@ function App() {
       <ProjectLoadOverlay />
       <RestorePreviousFolderPrompt />
       <Toast />
+      <GridDebugPanel />
     </div>
   );
 }

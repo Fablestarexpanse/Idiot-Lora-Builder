@@ -5,14 +5,14 @@ import { Sidebar } from "./Sidebar";
 
 export function AppLayout() {
   return (
-    <div className="flex flex-1 min-w-0">
+    <div className="flex min-w-0 flex-1 overflow-x-hidden">
       {/* Sidebar: folders & stats */}
       <Sidebar />
 
       {/* Main: filter bar + image grid */}
-      <section className="flex flex-1 min-w-0 flex-col">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden">
         <FilterBar />
-        <div className="flex-1 min-h-0 overflow-auto p-4">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4">
           <ImageGrid />
         </div>
       </section>

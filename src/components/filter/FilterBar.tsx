@@ -1,6 +1,9 @@
 import { Search, X, Smile, Frown, Wrench, CheckSquare, ArrowUp, ArrowDown } from "lucide-react";
 import { useFilterStore } from "@/stores/filterStore";
 import { useSelectionStore } from "@/stores/selectionStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { matchThumbnailPreset } from "@/lib/thumbnailPresets";
+import type { ThumbnailPresetId } from "@/lib/thumbnailPresets";
 import type { ImageRating } from "@/types";
 
 export function FilterBar() {
@@ -19,6 +22,11 @@ export function FilterBar() {
   const selectedIds = useSelectionStore((s) => s.selectedIds);
   const clearSelection = useSelectionStore((s) => s.clearSelection);
 
+  const gridMinCellScale = useSettingsStore((s) => s.gridMinCellScale);
+  const thumbnailSize = useSettingsStore((s) => s.thumbnailSize);
+  const setThumbnailPreset = useSettingsStore((s) => s.setThumbnailPreset);
+  const activeThumbPreset = matchThumbnailPreset(gridMinCellScale, thumbnailSize);
+
   const hasFilters = query || showCaptioned !== null || ratingFilter !== null;
 
   function handleRatingFilter(rating: ImageRating) {
@@ -26,7 +34,7 @@ export function FilterBar() {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface-elevated px-2 py-1.5">
+    <div className="flex w-full min-w-0 max-w-full flex-wrap items-center gap-2 overflow-x-hidden border-b border-border bg-surface-elevated px-2 py-1.5">
       {/* Search input — shrinks with window, max width so tools stay visible */}
       <div className="relative min-w-[72px] max-w-[160px] flex-1 shrink basis-24">
         <Search className="absolute left-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500 pointer-events-none" />
@@ -134,6 +142,36 @@ export function FilterBar() {
           )}
           {sortOrder === "asc" ? "Asc" : "Desc"}
         </button>
+      </div>
+
+      {/* Thumbnail size preset: fits columns to panel width (no horizontal scroll) */}
+      <div
+        className="flex shrink-0 items-center gap-0.5 border-l border-border pl-2"
+        role="group"
+        aria-label="Thumbnail size"
+      >
+        <span className="mr-0.5 hidden text-xs text-gray-500 sm:inline">Thumbs</span>
+        {(
+          [
+            ["small", "S", "Small — more columns, lighter load"],
+            ["medium", "M", "Medium"],
+            ["large", "B", "Big — fewer columns, sharper tiles"],
+          ] as const
+        ).map(([id, label, title]) => (
+          <button
+            key={id}
+            type="button"
+            title={title}
+            onClick={() => setThumbnailPreset(id as ThumbnailPresetId)}
+            className={`rounded px-2 py-1 text-xs font-medium ${
+              activeThumbPreset === id
+                ? "bg-blue-600 text-white"
+                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Rating filter buttons */}

@@ -5,7 +5,6 @@ import {
   Wifi,
   WifiOff,
   Play,
-  Loader2,
   Check,
   X,
   Square,
@@ -18,11 +17,11 @@ import { useProjectImages } from "@/hooks/useProject";
 import {
   testLmStudioConnection,
   testOllamaConnection,
-  generateCaptionLmStudio,
   generateCaptionsBatch,
   writeCaption,
 } from "@/lib/tauri";
 import { buildEffectivePrompt } from "@/lib/promptBuilder";
+import { buildBatchCaptionTargets } from "@/lib/batchCaptionTargets";
 
 export function AiPanel() {
   const [previewCaption, setPreviewCaption] = useState<string | null>(null);
@@ -46,7 +45,6 @@ export function AiPanel() {
     characterName,
     extraOptionIds,
     setWordCount,
-    setLength,
     setCharacterName,
     addPromptTemplate,
     removePromptTemplate,
@@ -72,8 +70,12 @@ export function AiPanel() {
     batchCaptionRatingAll,
     setBatchCaptionRatingAll,
     toggleBatchCaptionRating,
+    batchCaptionOnlyNoTags,
+    setBatchCaptionOnlyNoTags,
     batchConcurrency,
     setBatchConcurrency,
+    captionMaxTokens,
+    setCaptionMaxTokens,
   } = useAiStore();
 
   const selectedIds = useSelectionStore((s) => s.selectedIds);
@@ -124,36 +126,6 @@ export function AiPanel() {
     },
   });
 
-  const generateSingleMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedImage) return null;
-
-      const baseUrl = provider === "ollama" ? ollama.base_url : lmStudio.base_url;
-      const model = provider === "ollama" ? ollama.model : lmStudio.model;
-      const timeoutSecs = lmStudio.timeout_secs ?? 120;
-      const maxImageDimension = lmStudio.max_image_dimension ?? null;
-      return generateCaptionLmStudio(
-        selectedImage.path,
-        baseUrl,
-        model,
-        effectivePrompt,
-        300,
-        timeoutSecs,
-        maxImageDimension
-      );
-    },
-    onSuccess: (result) => {
-      if (result?.success) {
-        setPreviewCaption(result.caption);
-      } else if (result?.error) {
-        showToast(result.error);
-      }
-    },
-    onError: (err: Error) => {
-      showToast(err.message);
-    },
-  });
-
   async function handleAcceptCaption() {
     if (!selectedImage || !previewCaption) return;
     const tags = previewCaption
@@ -168,23 +140,20 @@ export function AiPanel() {
   }
 
   async function handleBatchGenerate() {
-    let baseImages: typeof images;
-    if (batchCaptionRatingAll) {
-      baseImages = images;
-    } else if (batchCaptionRatingFilter.size > 0) {
-      baseImages = images.filter((img) =>
-        batchCaptionRatingFilter.has(img.rating)
-      );
-    } else {
-      baseImages =
-        selectedIds.size > 0
-          ? images.filter((img) => selectedIds.has(img.id))
-          : images.filter((img) => !img.has_caption);
-    }
-    const targetImages = baseImages;
+    const targetImages = buildBatchCaptionTargets(
+      images,
+      batchCaptionRatingAll,
+      batchCaptionRatingFilter,
+      selectedIds,
+      batchCaptionOnlyNoTags
+    );
 
     if (targetImages.length === 0) {
-      showToast("No images to caption. Select images, check All, or pick Good/Bad/Needs Edit.");
+      showToast(
+        batchCaptionOnlyNoTags
+          ? "No images match (try turning off “no tags only”, or adjust rating / selection)."
+          : "No images to caption. Select images, check All, or pick Good/Bad/Needs Edit."
+      );
       return;
     }
 
@@ -210,7 +179,7 @@ export function AiPanel() {
           baseUrl,
           model,
           effectivePrompt,
-          300,
+          captionMaxTokens,
           timeoutSecs,
           batchConcurrency,
           maxImageDimension
@@ -254,37 +223,42 @@ export function AiPanel() {
     cancelBatchRef.current = true;
   }
 
-  const uncaptionedCount = useMemo(
-    () => images.filter((img) => !img.has_caption).length,
-    [images]
+  const batchTargetImages = useMemo(
+    () =>
+      buildBatchCaptionTargets(
+        images,
+        batchCaptionRatingAll,
+        batchCaptionRatingFilter,
+        selectedIds,
+        batchCaptionOnlyNoTags
+      ),
+    [
+      images,
+      batchCaptionRatingAll,
+      batchCaptionRatingFilter,
+      selectedIds,
+      batchCaptionOnlyNoTags,
+    ]
   );
-  
-  const batchTargetImages = useMemo(() => {
-    if (batchCaptionRatingAll) {
-      return images;
-    } else if (batchCaptionRatingFilter.size > 0) {
-      return images.filter((img) =>
-        batchCaptionRatingFilter.has(img.rating)
-      );
-    } else {
-      return selectedIds.size > 0
-        ? images.filter((img) => selectedIds.has(img.id))
-        : images.filter((img) => !img.has_caption);
-    }
-  }, [images, batchCaptionRatingAll, batchCaptionRatingFilter, selectedIds]);
   
   const batchTargetCount = batchTargetImages.length;
   
-  const batchLabel = useMemo(
-    () => batchCaptionRatingAll
+  const batchLabel = useMemo(() => {
+    const base = batchCaptionRatingAll
       ? `${batchTargetCount} (all)`
       : batchCaptionRatingFilter.size > 0
         ? `${batchTargetCount} (rating filter)`
         : selectedIds.size > 0
-          ? `${selectedIds.size} selected`
-          : `${uncaptionedCount} uncaptioned`,
-    [batchCaptionRatingAll, batchTargetCount, batchCaptionRatingFilter.size, selectedIds.size, uncaptionedCount]
-  );
+          ? `${batchTargetCount} selected`
+          : `${batchTargetCount} uncaptioned`;
+    return batchCaptionOnlyNoTags ? `${base}, no tags only` : base;
+  }, [
+    batchCaptionRatingAll,
+    batchTargetCount,
+    batchCaptionRatingFilter.size,
+    selectedIds.size,
+    batchCaptionOnlyNoTags,
+  ]);
 
   return (
     <div className="flex flex-col border-t border-border">
@@ -321,6 +295,24 @@ export function AiPanel() {
             Ollama
           </button>
         </div>
+      </div>
+
+      <div className="border-b border-border p-3">
+        <label className="mb-1 block text-xs text-gray-500">Max completion tokens</label>
+        <p className="mb-2 text-[11px] leading-snug text-gray-500">
+          Reasoning models spend much of this on internal thinking. If captions are empty or cut off, increase this (e.g. 2048).
+        </p>
+        <select
+          value={captionMaxTokens}
+          onChange={(e) => setCaptionMaxTokens(Number(e.target.value))}
+          className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-gray-200"
+        >
+          {[512, 1024, 1536, 2048, 4096].map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Provider-specific settings */}
@@ -648,8 +640,18 @@ export function AiPanel() {
             );
           })}
         </div>
+        <label className="mt-3 flex cursor-pointer items-center gap-2 rounded border border-border bg-surface px-2 py-1.5 text-xs text-gray-300 hover:bg-white/5">
+          <input
+            type="checkbox"
+            checked={batchCaptionOnlyNoTags}
+            onChange={(e) => setBatchCaptionOnlyNoTags(e.target.checked)}
+            className="rounded border-gray-600"
+          />
+          <span>Only caption images with no tags</span>
+        </label>
         <p className="mt-2 text-[10px] leading-relaxed text-gray-500">
-          All = every image in project (re-caption). Otherwise: selected/uncaptioned + rating.
+          All = every image in project (re-caption). Otherwise: selected/uncaptioned + rating. “No tags”
+          skips any image that already has at least one non-empty tag (useful after a partial run).
         </p>
       </div>
 

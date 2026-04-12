@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { ThumbnailPresetId } from "@/lib/thumbnailPresets";
+import { THUMBNAIL_PRESETS } from "@/lib/thumbnailPresets";
 
 interface SettingsState {
   triggerWord: string;
@@ -8,19 +10,25 @@ interface SettingsState {
   /** When true, trigger word input is disabled and cannot be changed */
   triggerWordLocked: boolean;
   thumbnailSize: number;
+  /** Multiplier for grid column sizing (smaller = more columns / smaller tiles). */
+  gridMinCellScale: number;
   autoSelectFirst: boolean;
   /** When true, show a confirmation dialog before clearing tags on a single image */
   confirmBeforeClearTags: boolean;
   /** When true, grid Generate shows preview and Accept/Reject before saving */
   previewBeforeSaveCaption: boolean;
+  /** Performance / layout overlay (bottom-left) */
+  showGridDebug: boolean;
   setTriggerWord: (word: string) => void;
   setPreviousTriggerWord: (word: string) => void;
   setTriggerWordLocked: (locked: boolean) => void;
   setThumbnailSize: (size: number) => void;
+  setGridMinCellScale: (value: number) => void;
+  setThumbnailPreset: (preset: ThumbnailPresetId) => void;
   setAutoSelectFirst: (value: boolean) => void;
   setConfirmBeforeClearTags: (value: boolean) => void;
   setPreviewBeforeSaveCaption: (value: boolean) => void;
-  setAiToolkitPath: (path: string) => void;
+  setShowGridDebug: (value: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -29,17 +37,25 @@ export const useSettingsStore = create<SettingsState>()(
       triggerWord: "",
       previousTriggerWord: "",
       triggerWordLocked: false,
-      thumbnailSize: 256,
+      thumbnailSize: 768,
+      gridMinCellScale: 1,
       autoSelectFirst: true,
       confirmBeforeClearTags: true,
       previewBeforeSaveCaption: false,
+      showGridDebug: false,
       setTriggerWord: (triggerWord) => set({ triggerWord }),
       setPreviousTriggerWord: (previousTriggerWord) => set({ previousTriggerWord }),
       setTriggerWordLocked: (triggerWordLocked) => set({ triggerWordLocked }),
       setThumbnailSize: (thumbnailSize) => set({ thumbnailSize }),
+      setGridMinCellScale: (gridMinCellScale) => set({ gridMinCellScale }),
+      setThumbnailPreset: (preset) => {
+        const p = THUMBNAIL_PRESETS[preset];
+        set({ gridMinCellScale: p.gridMinCellScale, thumbnailSize: p.thumbnailSize });
+      },
       setAutoSelectFirst: (autoSelectFirst) => set({ autoSelectFirst }),
       setConfirmBeforeClearTags: (confirmBeforeClearTags) => set({ confirmBeforeClearTags }),
       setPreviewBeforeSaveCaption: (previewBeforeSaveCaption) => set({ previewBeforeSaveCaption }),
+      setShowGridDebug: (showGridDebug) => set({ showGridDebug }),
     }),
     {
       name: "lora-studio-settings",

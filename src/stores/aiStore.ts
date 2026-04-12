@@ -64,9 +64,16 @@ interface AiState {
   setBatchCaptionRatingFilter: (ratings: Set<string>) => void;
   setBatchCaptionRatingAll: (all: boolean) => void;
   toggleBatchCaptionRating: (rating: "good" | "bad" | "needs_edit") => void;
+  /** When true, batch caption only images whose tag list is empty (or whitespace-only). */
+  batchCaptionOnlyNoTags: boolean;
+  setBatchCaptionOnlyNoTags: (value: boolean) => void;
   /** Max concurrent requests for batch (1–8, default 2). */
   batchConcurrency: number;
   setBatchConcurrency: (n: number) => void;
+
+  /** OpenAI `max_tokens` / completion budget (reasoning models need more). */
+  captionMaxTokens: number;
+  setCaptionMaxTokens: (n: number) => void;
 }
 
 export const useAiStore = create<AiState>()(
@@ -183,9 +190,15 @@ export const useAiStore = create<AiState>()(
           else next.add(rating);
           return { batchCaptionRatingFilter: next, batchCaptionRatingAll: false };
         }),
+      batchCaptionOnlyNoTags: false,
+      setBatchCaptionOnlyNoTags: (batchCaptionOnlyNoTags) => set({ batchCaptionOnlyNoTags }),
       batchConcurrency: 1,
       setBatchConcurrency: (batchConcurrency) =>
         set({ batchConcurrency: Math.max(1, Math.min(8, batchConcurrency)) }),
+
+      captionMaxTokens: 1024,
+      setCaptionMaxTokens: (captionMaxTokens) =>
+        set({ captionMaxTokens: Math.max(64, Math.min(32768, captionMaxTokens)) }),
     }),
     {
       name: "lora-studio-ai-settings",
@@ -199,6 +212,8 @@ export const useAiStore = create<AiState>()(
         lmStudio: state.lmStudio,
         ollama: state.ollama,
         batchConcurrency: state.batchConcurrency,
+        captionMaxTokens: state.captionMaxTokens,
+        batchCaptionOnlyNoTags: state.batchCaptionOnlyNoTags,
         promptTemplates: state.promptTemplates,
         selectedTemplateId: state.selectedTemplateId,
       }),

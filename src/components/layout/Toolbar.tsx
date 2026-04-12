@@ -53,7 +53,7 @@ export function Toolbar() {
   return (
     <>
       <header
-        className={`flex h-12 shrink-0 items-center gap-2 border-b-2 border-border bg-surface-elevated px-3 ${ratingBorderClass}`}
+        className={`flex h-12 min-w-0 shrink-0 flex-wrap items-center gap-2 border-b-2 border-border bg-surface-elevated px-3 ${ratingBorderClass}`}
       >
         {/* Open */}
         <button
@@ -118,7 +118,7 @@ export function Toolbar() {
         <span className="text-xs text-gray-500">|</span>
 
         {/* Title */}
-        <span className="flex-1 text-xs text-gray-500">LoRA Dataset Studio</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-gray-500">LoRA Dataset Studio</span>
 
         {/* Right side buttons */}
         <button

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, memo, useMemo } from "react";
+import { useState, useRef, useEffect, memo, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Smile, Frown, Wrench, Loader2, Maximize2, Crop, Trash2, X, Eraser, Check, Sparkles } from "lucide-react";
 import {
@@ -9,6 +9,9 @@ import {
   generateCaptionLmStudio,
 } from "@/lib/tauri";
 import { buildEffectivePrompt } from "@/lib/promptBuilder";
+import { getThumbnailDecodeDpr, thumbEdgeFromCssPx } from "@/lib/displayDensity";
+import { alignThumbRequestSize } from "@/lib/gridThumbnail";
+import { withThumbnailInvokeLimit } from "@/lib/thumbnailInvokeLimit";
 import { useAiStore } from "@/stores/aiStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useSearchReplaceStore } from "@/stores/searchReplaceStore";
@@ -101,15 +104,23 @@ function highlightTriggerWord(text: string, trigger: string): React.ReactNode {
 
 interface ThumbnailCellProps {
   entry: ImageEntry;
-  size: number;
+  /** Approximate decode size before the cell is measured (from grid layout × DPR). */
+  fallbackThumbEdge: number;
   index: number;
   /** True if this image would be included in batch captioning */
   isInCaptionBatch?: boolean;
 }
 
-export const ThumbnailCell = memo(function ThumbnailCell({ entry, size, index, isInCaptionBatch = false }: ThumbnailCellProps) {
+export const ThumbnailCell = memo(function ThumbnailCell({
+  entry,
+  fallbackThumbEdge,
+  index,
+  isInCaptionBatch = false,
+}: ThumbnailCellProps) {
   const cellRef = useRef<HTMLDivElement>(null);
+  const thumbBoxRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [measuredThumbEdge, setMeasuredThumbEdge] = useState<number | null>(null);
   
   const selectedImage = useSelectionStore((s) => s.selectedImage);
   const setSelectedImage = useSelectionStore((s) => s.setSelectedImage);
@@ -120,11 +131,14 @@ export const ThumbnailCell = memo(function ThumbnailCell({ entry, size, index, i
   const showToast = useUiStore((s) => s.showToast);
   const rootPath = useProjectStore((s) => s.rootPath);
   const queryClient = useQueryClient();
+  const thumbnailMax = useSettingsStore((s) => s.thumbnailSize);
 
-  // Intersection observer for lazy loading
+  // Intersection observer for lazy loading (root = grid scrollport, not viewport)
   useEffect(() => {
     const element = cellRef.current;
     if (!element) return;
+
+    const root = element.closest("[data-grid-scroll-root]");
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -137,7 +151,8 @@ export const ThumbnailCell = memo(function ThumbnailCell({ entry, size, index, i
         });
       },
       {
-        rootMargin: "200px", // Start loading 200px before entering viewport
+        root: root instanceof Element ? root : null,
+        rootMargin: "48px",
       }
     );
 
@@ -146,10 +161,27 @@ export const ThumbnailCell = memo(function ThumbnailCell({ entry, size, index, i
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    const el = thumbBoxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect;
+      if (!cr) return;
+      const css = Math.min(cr.width, cr.height);
+      if (css < 8) return;
+      const raw = Math.min(1536, thumbEdgeFromCssPx(css, getThumbnailDecodeDpr()));
+      const aligned = alignThumbRequestSize(raw, thumbnailMax);
+      setMeasuredThumbEdge((prev) => (prev === aligned ? prev : aligned));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [thumbnailMax]);
+
   // Use individual selectors to avoid unnecessary re-renders
   const provider = useAiStore((s) => s.provider);
   const lmStudio = useAiStore((s) => s.lmStudio);
   const ollama = useAiStore((s) => s.ollama);
+  const captionMaxTokens = useAiStore((s) => s.captionMaxTokens);
   const customPrompt = useAiStore((s) => s.customPrompt);
   const promptTemplates = useAiStore((s) => s.promptTemplates);
   const selectedTemplateId = useAiStore((s) => s.selectedTemplateId);
@@ -259,7 +291,15 @@ export const ThumbnailCell = memo(function ThumbnailCell({ entry, size, index, i
   const model = provider === "ollama" ? ollama.model : lmStudio.model;
   const generateCaptionMutation = useMutation({
     mutationFn: async () => {
-      return generateCaptionLmStudio(entry.path, baseUrl, model, effectivePrompt);
+      return generateCaptionLmStudio(
+        entry.path,
+        baseUrl,
+        model,
+        effectivePrompt,
+        captionMaxTokens,
+        lmStudio.timeout_secs ?? 120,
+        lmStudio.max_image_dimension ?? null
+      );
     },
     onSuccess: async (result) => {
       if (result?.success && result.caption) {
@@ -357,11 +397,18 @@ export const ThumbnailCell = memo(function ThumbnailCell({ entry, size, index, i
     ratingMutation.mutate(newRating);
   }
 
+  const requestThumbSize = alignThumbRequestSize(
+    measuredThumbEdge ?? fallbackThumbEdge,
+    thumbnailMax
+  );
+
   const { data: src, isLoading, isError } = useQuery({
-    queryKey: ["thumbnail", entry.path, size],
-    queryFn: () => getThumbnailDataUrl(entry.path, size),
-    staleTime: 5 * 60 * 1000,
-    enabled: isVisible, // Only load thumbnail when cell is visible
+    queryKey: ["thumbnail", entry.path, requestThumbSize],
+    queryFn: () =>
+      withThumbnailInvokeLimit(() => getThumbnailDataUrl(entry.path, requestThumbSize)),
+    staleTime: 30 * 60 * 1000,
+    gcTime: 45 * 60 * 1000,
+    enabled: isVisible && requestThumbSize > 0,
   });
 
   function handleImageClick(e: React.MouseEvent) {
@@ -455,7 +502,7 @@ export const ThumbnailCell = memo(function ThumbnailCell({ entry, size, index, i
       onClick={handleImageClick}
       onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
-      className={`group relative flex cursor-pointer flex-col rounded border-2 transition-colors ${
+      className={`group relative flex min-w-0 max-w-full cursor-pointer flex-col rounded border-2 transition-colors ${
         isMultiSelected
           ? "border-purple-500 bg-purple-500/10"
           : isInCaptionBatch
@@ -501,7 +548,8 @@ export const ThumbnailCell = memo(function ThumbnailCell({ entry, size, index, i
 
       {/* Thumbnail */}
       <div
-        className="relative flex aspect-square w-full shrink-0 items-center justify-center bg-gray-800/50"
+        ref={thumbBoxRef}
+        className="relative flex aspect-square w-full shrink-0 items-center justify-center bg-gray-900/80"
       >
         {/* View larger - always visible top-left on image */}
         <button
@@ -519,8 +567,9 @@ export const ThumbnailCell = memo(function ThumbnailCell({ entry, size, index, i
           <img
             src={src}
             alt=""
-            className="h-full w-full object-cover"
+            className="h-full w-full object-contain"
             loading="lazy"
+            decoding="async"
             draggable={false}
           />
         )}

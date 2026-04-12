@@ -1,6 +1,6 @@
 [package]
 name = "lora-dataset-studio"
-version = "0.4.0"
+version = "0.4.1"
 description = "LoRA Dataset Studio - Prepare image datasets for AI model training"
 authors = ["PromptWaffle"]
 license = "MIT"
@@ -18,6 +18,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 walkdir = "2"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+kamadak-exif = "0.6"
 base64 = "0.22"
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["process", "io-util", "macros", "rt"] }

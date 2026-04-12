@@ -1,23 +1,61 @@
-import { useRef, useEffect, useMemo, useState, memo } from "react";
+import { useRef, useEffect, useLayoutEffect, useMemo, useState, memo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useQueryClient } from "@tanstack/react-query";
 import { useProjectImages } from "@/hooks/useProject";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useAiStore } from "@/stores/aiStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useGridMetricsStore } from "@/stores/gridMetricsStore";
+import { getThumbnailDecodeDpr } from "@/lib/displayDensity";
+import {
+  chunkArray,
+  collectPathsForRowIndices,
+  expandRowIndicesForPrefetch,
+  normalizeGridThumbRequestSize,
+  prefetchChunkSizeForThumbEdge,
+} from "@/lib/gridThumbnail";
+import { buildBatchCaptionTargets } from "@/lib/batchCaptionTargets";
+import { getThumbnailsBatch } from "@/lib/tauri";
+import { matchThumbnailPreset } from "@/lib/thumbnailPresets";
 import { ThumbnailCell } from "./ThumbnailCell";
 
-const MIN_THUMB_SIZE = 200;
+/** Base target minimum cell width (CSS px); multiplied by settings `gridMinCellScale`. */
+const GRID_BASE_MIN_CELL = 104;
+const MIN_COLS = 3;
+/** Upper bound on columns; wide windows need >12 or S/M/B all clamp to the same count and tiles never resize. */
+const MAX_COLS = 24;
+/** Large (B): always 3 or 4 columns — min cell cap made this impossible via the density formula alone. */
+const LARGE_GRID_INNER_BREAKPOINT = 560;
 const GAP = 12;
 const ROW_GAP = 12; // Vertical spacing between rows (same as horizontal)
-// Row height: image (200px) + buttons (~28px) + filename/info (~28px) + caption box (~80px avg) + padding (~10px) + row gap (12px)
-const ROW_HEIGHT = 358;
+// Initial virtual row estimate; actual height comes from measureElement (square thumbs scale with column width).
+const ROW_HEIGHT = 340;
 
 export const ImageGrid = memo(function ImageGrid() {
   const gridRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+  const thumbnailMax = useSettingsStore((s) => s.thumbnailSize);
+  const gridMinCellScale = useSettingsStore((s) => s.gridMinCellScale);
   const { data: allImages = [], isLoading, isError } = useProjectImages();
 
-  // Track columns for keyboard nav
-  const [columnCount, setColumnCount] = useState(5);
+  const [layout, setLayout] = useState({ innerWidth: 0, columnCount: 5 });
+  const { innerWidth: gridInnerWidth, columnCount } = layout;
+
+  const estimatedCellWidth = useMemo(() => {
+    if (columnCount <= 0 || gridInnerWidth <= 0) return 0;
+    return (gridInnerWidth - GAP * Math.max(0, columnCount - 1)) / columnCount;
+  }, [gridInnerWidth, columnCount]);
+
+  const decodeDpr = getThumbnailDecodeDpr();
+  const sharedThumbSize = useMemo(
+    () =>
+      estimatedCellWidth > 0
+        ? normalizeGridThumbRequestSize(estimatedCellWidth, decodeDpr, thumbnailMax)
+        : 256,
+    [estimatedCellWidth, decodeDpr, thumbnailMax]
+  );
+  const fallbackThumbEdge = sharedThumbSize;
 
   // Filter state
   const showCaptioned = useFilterStore((s) => s.showCaptioned);
@@ -31,41 +69,25 @@ export const ImageGrid = memo(function ImageGrid() {
   const selectedIds = useSelectionStore((s) => s.selectedIds);
   const batchCaptionRatingFilter = useAiStore((s) => s.batchCaptionRatingFilter);
   const batchCaptionRatingAll = useAiStore((s) => s.batchCaptionRatingAll);
+  const batchCaptionOnlyNoTags = useAiStore((s) => s.batchCaptionOnlyNoTags);
 
   // IDs of images that would be included in batch captioning (for green outline)
   const captionBatchIds = useMemo(() => {
-    // "All" = every image. Good/Bad/Needs Edit = all images with those ratings.
-    let base: typeof allImages;
-    if (batchCaptionRatingAll) {
-      base = allImages;
-    } else if (batchCaptionRatingFilter.size > 0) {
-      base = allImages.filter((img) => batchCaptionRatingFilter.has(img.rating));
-    } else {
-      base =
-        selectedIds.size > 0
-          ? allImages.filter((img) => selectedIds.has(img.id))
-          : allImages.filter((img) => !img.has_caption);
-    }
-    return new Set(base.map((img) => img.id));
-  }, [allImages, selectedIds, batchCaptionRatingFilter, batchCaptionRatingAll]);
-  // Update column count based on container width
-  useEffect(() => {
-    const container = gridRef.current;
-    if (!container) return;
-
-    const updateColumns = () => {
-      const width = container.clientWidth - GAP * 2; // subtract padding
-      const cols = Math.max(1, Math.floor((width + GAP) / (MIN_THUMB_SIZE + GAP)));
-      setColumnCount(cols);
-    };
-
-    updateColumns();
-
-    const observer = new ResizeObserver(updateColumns);
-    observer.observe(container);
-
-    return () => observer.disconnect();
-  }, []);
+    const targets = buildBatchCaptionTargets(
+      allImages,
+      batchCaptionRatingAll,
+      batchCaptionRatingFilter,
+      selectedIds,
+      batchCaptionOnlyNoTags
+    );
+    return new Set(targets.map((img) => img.id));
+  }, [
+    allImages,
+    selectedIds,
+    batchCaptionRatingFilter,
+    batchCaptionRatingAll,
+    batchCaptionOnlyNoTags,
+  ]);
 
   // Apply filters
   const filtered = useMemo(() => {
@@ -132,6 +154,37 @@ export const ImageGrid = memo(function ImageGrid() {
     return list;
   }, [filtered, sortBy, sortOrder]);
 
+  useEffect(() => {
+    const container = gridRef.current;
+    if (!container) return;
+
+    const updateLayout = () => {
+      const inner = Math.max(0, container.clientWidth - GAP * 2);
+      const thumbPreset = matchThumbnailPreset(gridMinCellScale, thumbnailMax);
+
+      let cols: number;
+      if (thumbPreset === "large") {
+        cols = inner < LARGE_GRID_INNER_BREAKPOINT ? 3 : 4;
+      } else {
+        const scaled = Math.round(GRID_BASE_MIN_CELL * gridMinCellScale);
+        const preferredMinCell = Math.max(64, Math.min(220, scaled));
+        cols = Math.max(
+          MIN_COLS,
+          Math.min(MAX_COLS, Math.floor((inner + GAP) / (preferredMinCell + GAP)))
+        );
+      }
+
+      setLayout({ innerWidth: inner, columnCount: cols });
+    };
+
+    updateLayout();
+    const observer = new ResizeObserver(updateLayout);
+    observer.observe(container);
+    return () => observer.disconnect();
+    // Re-attach when the scroll container mounts (ref was null during loading / empty states) or when
+    // the filtered list appears again — not only when gridMinCellScale changes, or S/M/B feels inert.
+  }, [gridMinCellScale, thumbnailMax, isLoading, images.length]);
+
   // Get current selected index
   const selectedIndex = useMemo(() => {
     if (!selectedImage) return -1;
@@ -146,9 +199,100 @@ export const ImageGrid = memo(function ImageGrid() {
     count: rowCount,
     getScrollElement: () => gridRef.current,
     estimateSize: () => ROW_HEIGHT,
-    overscan: 3,
+    overscan: 1,
     measureElement: (element) => element.getBoundingClientRect().height + ROW_GAP,
   });
+
+  const visibleRowKey = rowVirtualizer.getVirtualItems().map((v) => v.index).join(",");
+
+  const scrollActiveRef = useRef(false);
+  const scrollIdleTimerRef = useRef<number | undefined>(undefined);
+  const [scrollIdleEpoch, setScrollIdleEpoch] = useState(0);
+
+  useEffect(() => {
+    if (rowCount < 1 || images.length < 1) return;
+    const el = gridRef.current;
+    if (!el) return;
+
+    const onScroll = () => {
+      scrollActiveRef.current = true;
+      if (scrollIdleTimerRef.current !== undefined) {
+        window.clearTimeout(scrollIdleTimerRef.current);
+      }
+      scrollIdleTimerRef.current = window.setTimeout(() => {
+        scrollActiveRef.current = false;
+        scrollIdleTimerRef.current = undefined;
+        setScrollIdleEpoch((n) => n + 1);
+      }, 200);
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (scrollIdleTimerRef.current !== undefined) {
+        window.clearTimeout(scrollIdleTimerRef.current);
+        scrollIdleTimerRef.current = undefined;
+      }
+    };
+  }, [rowCount, images.length]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      if (scrollActiveRef.current) return;
+      if (images.length === 0 || columnCount < 1 || sharedThumbSize < 128) return;
+      const indices = visibleRowKey.length
+        ? visibleRowKey
+            .split(",")
+            .map((s) => Number(s))
+            .filter((n) => Number.isFinite(n))
+        : [];
+      if (indices.length === 0) return;
+      const padded = expandRowIndicesForPrefetch(indices, rowCount, 1);
+      const paths = collectPathsForRowIndices(images, columnCount, padded);
+      if (paths.length === 0) return;
+      const chunkSize = prefetchChunkSizeForThumbEdge(sharedThumbSize);
+      const chunks = chunkArray(paths, chunkSize);
+      for (const chunk of chunks) {
+        if (cancelled) return;
+        try {
+          const results = await getThumbnailsBatch(chunk, sharedThumbSize);
+          if (cancelled) return;
+          for (const r of results) {
+            if (r.data_url) {
+              queryClient.setQueryData(["thumbnail", r.path, sharedThumbSize], r.data_url);
+            }
+          }
+        } catch {
+          /* cells fall back to limited single-invoke fetch */
+        }
+      }
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [visibleRowKey, scrollIdleEpoch, images, columnCount, rowCount, sharedThumbSize, queryClient]);
+
+  const setGridMetrics = useGridMetricsStore((s) => s.setSnapshot);
+  useLayoutEffect(() => {
+    setGridMetrics({
+      containerInnerWidth: gridInnerWidth,
+      columnCount,
+      filteredTotal: images.length,
+      rowCount,
+      estimatedCellWidth,
+      fallbackThumbEdge,
+    });
+  }, [
+    setGridMetrics,
+    gridInnerWidth,
+    columnCount,
+    images.length,
+    rowCount,
+    estimatedCellWidth,
+    fallbackThumbEdge,
+  ]);
 
   // Keyboard navigation (1/2/3 rating is handled globally in App via useRatingShortcuts)
   useEffect(() => {
@@ -250,12 +394,14 @@ export const ImageGrid = memo(function ImageGrid() {
   return (
     <div
       ref={gridRef}
-      className="h-full w-full overflow-auto rounded-lg focus:outline-none"
+      data-grid-scroll-root
+      className="h-full min-w-0 max-w-full overflow-y-auto overflow-x-hidden rounded-lg focus:outline-none"
       role="listbox"
       aria-label="Image grid"
       tabIndex={-1}
     >
       <div
+        className="min-w-0 max-w-full"
         style={{
           height: `${rowVirtualizer.getTotalSize() + GAP * 2}px`,
           width: "100%",
@@ -272,6 +418,7 @@ export const ImageGrid = memo(function ImageGrid() {
               key={virtualRow.key}
               data-index={virtualRow.index}
               ref={rowVirtualizer.measureElement}
+              className="min-w-0 max-w-full"
               style={{
                 position: "absolute",
                 top: 0,
@@ -282,9 +429,9 @@ export const ImageGrid = memo(function ImageGrid() {
               }}
             >
               <div
-                className="grid items-start"
+                className="grid min-w-0 max-w-full items-start"
                 style={{
-                  gridTemplateColumns: `repeat(${columnCount}, 1fr)`,
+                  gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
                   gap: `${GAP}px`,
                 }}
               >
@@ -294,7 +441,7 @@ export const ImageGrid = memo(function ImageGrid() {
                     <ThumbnailCell
                       key={entry.id}
                       entry={entry}
-                      size={MIN_THUMB_SIZE}
+                      fallbackThumbEdge={fallbackThumbEdge}
                       index={index}
                       isInCaptionBatch={captionBatchIds.has(entry.id)}
                     />

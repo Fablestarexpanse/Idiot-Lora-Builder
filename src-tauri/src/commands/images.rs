@@ -1,15 +1,99 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use exif::{In, Reader, Tag};
+use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
+use image::DynamicImage;
 use image::ImageFormat;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::{Cursor, Read, Write};
+use std::io::{BufReader, Cursor, Read, Write};
+use std::path::Path;
 use std::path::PathBuf;
 
 const THUMB_SIZE: u32 = 256;
+/// Upper bound for requested edge length (HiDPI grid cells + crisp factor on the front end).
+const THUMB_MAX_EDGE: u32 = 1536;
+/// Grid-only JPEG: slightly lower quality = faster encode + smaller IPC payload (Lightroom-style proxy).
+const JPEG_THUMB_QUALITY: u8 = 82;
 const CACHE_DIR_NAME: &str = "lora-dataset-studio-thumbnails";
+
+fn clamp_thumb_edge(requested: Option<u32>) -> u32 {
+    let s = requested.unwrap_or(THUMB_SIZE);
+    s.clamp(32, THUMB_MAX_EDGE)
+}
+
+/// EXIF-compressed preview inside the metadata TIFF (common on camera JPEGs). Decoding this tiny
+/// JPEG avoids reading/decoding the full-resolution image — same idea as Lightroom/Camera Raw
+/// embedded previews.
+fn exif_jpeg_interchange_bytes(exif: &exif::Exif, ifd: In) -> Option<&[u8]> {
+    let offset = exif
+        .get_field(Tag::JPEGInterchangeFormat, ifd)
+        .and_then(|f| f.value.get_uint(0))? as usize;
+    let len = exif
+        .get_field(Tag::JPEGInterchangeFormatLength, ifd)
+        .and_then(|f| f.value.get_uint(0))? as usize;
+    let buf = exif.buf();
+    let end = offset.checked_add(len)?;
+    if end > buf.len() {
+        return None;
+    }
+    let slice = &buf[offset..end];
+    if slice.len() < 4 || !slice.starts_with(&[0xff, 0xd8]) {
+        return None;
+    }
+    Some(slice)
+}
+
+fn try_decode_exif_embedded_preview(path: &Path) -> Option<DynamicImage> {
+    let file = fs::File::open(path).ok()?;
+    let mut reader = BufReader::new(file);
+    let exif = Reader::new().read_from_container(&mut reader).ok()?;
+    for ifd in [In::THUMBNAIL, In::PRIMARY] {
+        if let Some(jpeg_bytes) = exif_jpeg_interchange_bytes(&exif, ifd) {
+            if let Ok(img) = image::load_from_memory_with_format(jpeg_bytes, ImageFormat::Jpeg) {
+                if img.width() >= 8 && img.height() >= 8 {
+                    return Some(img);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Prefer EXIF embedded JPEG when present; otherwise full decode (PNG/WebP/GIF, JPEG without thumb).
+fn load_source_for_grid_thumbnail(path: &Path) -> Result<DynamicImage, String> {
+    if let Some(img) = try_decode_exif_embedded_preview(path) {
+        return Ok(img);
+    }
+    image::open(path).map_err(|e| e.to_string())
+}
+
+/// Fast downscale (nearest-area style) suitable for proxies; much cheaper than Lanczos on huge sources.
+fn encode_grid_thumbnail_jpeg(img: DynamicImage, edge: u32) -> Result<Vec<u8>, String> {
+    let thumb = img.thumbnail(edge, edge);
+    let rgb = thumb.to_rgb8();
+    let mut buf = Vec::new();
+    let mut enc = JpegEncoder::new_with_quality(&mut buf, JPEG_THUMB_QUALITY);
+    enc.encode(
+        rgb.as_raw(),
+        rgb.width(),
+        rgb.height(),
+        image::ExtendedColorType::Rgb8,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(buf)
+}
+
+fn generate_thumbnail_jpeg_cached(path: &Path, size: u32, cache_path: &Path) -> Result<Vec<u8>, String> {
+    let img = load_source_for_grid_thumbnail(path)?;
+    let buf = encode_grid_thumbnail_jpeg(img, size)?;
+    if let Ok(mut f) = fs::File::create(cache_path) {
+        let _ = f.write_all(&buf);
+    }
+    Ok(buf)
+}
 
 /// Cache dir under temp. Creates on first use.
 fn thumbnail_cache_dir() -> Result<PathBuf, String> {
@@ -84,7 +168,7 @@ pub fn get_thumbnail(payload: GetThumbnailPayload) -> Result<String, String> {
         return Err("File not found".to_string());
     }
 
-    let size = payload.size.unwrap_or(THUMB_SIZE).min(512);
+    let size = clamp_thumb_edge(payload.size);
     let cache_dir = thumbnail_cache_dir()?;
     let key = thumbnail_cache_key(&path, size)?;
     let cache_path = cache_dir.join(format!("{}.jpg", key));
@@ -97,17 +181,7 @@ pub fn get_thumbnail(payload: GetThumbnailPayload) -> Result<String, String> {
         return Ok(format!("data:image/jpeg;base64,{b64}"));
     }
 
-    let img = image::open(&path).map_err(|e| e.to_string())?;
-    let thumb = img.resize(size, size, FilterType::Triangle);
-    let mut buf = Vec::new();
-    thumb
-        .write_to(&mut Cursor::new(&mut buf), ImageFormat::Jpeg)
-        .map_err(|e| e.to_string())?;
-
-    if let Ok(mut f) = fs::File::create(&cache_path) {
-        let _ = f.write_all(&buf);
-    }
-
+    let buf = generate_thumbnail_jpeg_cached(&path, size, &cache_path)?;
     let b64 = BASE64.encode(&buf);
     Ok(format!("data:image/jpeg;base64,{b64}"))
 }
@@ -480,7 +554,7 @@ pub struct ThumbnailResult {
 /// Generate thumbnails for multiple images in parallel
 #[tauri::command]
 pub fn get_thumbnails_batch(payload: GetThumbnailsBatchPayload) -> Result<Vec<ThumbnailResult>, String> {
-    let size = payload.size.unwrap_or(THUMB_SIZE).min(512);
+    let size = clamp_thumb_edge(payload.size);
     let cache_dir = thumbnail_cache_dir()?;
 
     let results: Vec<ThumbnailResult> = payload
@@ -516,36 +590,19 @@ pub fn get_thumbnails_batch(payload: GetThumbnailsBatchPayload) -> Result<Vec<Th
                         }
                     }
 
-                    // Generate thumbnail
-                    match image::open(&path) {
-                        Ok(img) => {
-                            let thumb = img.resize(size, size, FilterType::Triangle);
-                            let mut buf = Vec::new();
-                            
-                            if thumb.write_to(&mut Cursor::new(&mut buf), ImageFormat::Jpeg).is_ok() {
-                                // Try to cache
-                                if let Ok(mut f) = fs::File::create(&cache_path) {
-                                    let _ = f.write_all(&buf);
-                                }
-                                
-                                let b64 = BASE64.encode(&buf);
-                                ThumbnailResult {
-                                    path: path_str.clone(),
-                                    data_url: Some(format!("data:image/jpeg;base64,{b64}")),
-                                    error: None,
-                                }
-                            } else {
-                                ThumbnailResult {
-                                    path: path_str.clone(),
-                                    data_url: None,
-                                    error: Some("Failed to encode thumbnail".to_string()),
-                                }
+                    match generate_thumbnail_jpeg_cached(&path, size, &cache_path) {
+                        Ok(buf) => {
+                            let b64 = BASE64.encode(&buf);
+                            ThumbnailResult {
+                                path: path_str.clone(),
+                                data_url: Some(format!("data:image/jpeg;base64,{b64}")),
+                                error: None,
                             }
                         }
                         Err(e) => ThumbnailResult {
                             path: path_str.clone(),
                             data_url: None,
-                            error: Some(e.to_string()),
+                            error: Some(e),
                         },
                     }
                 }

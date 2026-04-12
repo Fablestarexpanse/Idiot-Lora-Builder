@@ -217,7 +217,7 @@ export async function generateCaptionLmStudio(
   baseUrl: string,
   model: string | null,
   prompt: string,
-  maxTokens: number = 300,
+  maxTokens: number = 1024,
   timeoutSecs: number = 120,
   maxImageDimension: number | null = null
 ): Promise<CaptionResult> {
@@ -239,7 +239,7 @@ export async function generateCaptionsBatch(
   baseUrl: string,
   model: string | null,
   prompt: string,
-  maxTokens: number = 300,
+  maxTokens: number = 1024,
   timeoutSecs: number = 120,
   concurrency: number = 1,
   maxImageDimension: number | null = null

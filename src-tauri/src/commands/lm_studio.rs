@@ -3,6 +3,7 @@ use futures::stream::{self, StreamExt};
 use image::imageops::FilterType;
 use image::ImageFormat;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::io::Cursor;
 use std::path::PathBuf;
 
@@ -100,7 +101,116 @@ pub struct GenerateCaptionPayload {
 }
 
 fn default_max_tokens() -> u32 {
-    300
+    1024
+}
+
+/// OpenAI-style `message.content` may be a string, null, or an array of parts (e.g. text + image).
+fn flatten_message_content(content: &Option<Value>) -> String {
+    match content {
+        None | Some(Value::Null) => String::new(),
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Array(parts)) => {
+            let mut out = String::new();
+            for p in parts {
+                let Some(obj) = p.as_object() else {
+                    continue;
+                };
+                if obj.get("type").and_then(|t| t.as_str()) != Some("text") {
+                    continue;
+                }
+                let Some(text) = obj.get("text").and_then(|x| x.as_str()) else {
+                    continue;
+                };
+                if !out.is_empty() && !out.ends_with(char::is_whitespace) {
+                    out.push(' ');
+                }
+                out.push_str(text);
+            }
+            out
+        }
+        _ => String::new(),
+    }
+}
+
+/// Reasoning / "thinking" models often put the entire completion in `reasoning_content` while
+/// `content` stays empty until the budget runs out (`finish_reason: length`). Try to salvage a
+/// caption from the reasoning trace (draft paragraphs), else return trimmed reasoning.
+fn extract_caption_from_reasoning(reasoning: &str) -> String {
+    let s = reasoning.trim();
+    if s.is_empty() {
+        return String::new();
+    }
+
+    // Prefer text after common "draft output" markers (last match ≈ latest draft).
+    let markers = [
+        "**Drafting - Attempt 1:**",
+        "Attempt 1:**",
+        "*Attempt 1:*",
+        "**Drafting",
+        "*Draft 1:*",
+        "Draft 1:",
+        "*   *Draft",
+        "Iteration 1:**",
+    ];
+    let mut best_from_marker = String::new();
+    for m in markers {
+        if let Some(idx) = s.rfind(m) {
+            let after = s[idx + m.len()..]
+                .trim_start()
+                .trim_start_matches(|c: char| c == ':' || c == '*' || c == ' ' || c == '\n');
+            let para = after
+                .split("\n\n")
+                .next()
+                .unwrap_or(after)
+                .trim();
+            if para.len() > best_from_marker.len() && para.len() > 24 {
+                best_from_marker = para.to_string();
+            }
+        }
+    }
+    if !best_from_marker.is_empty() {
+        return best_from_marker;
+    }
+
+    let paras: Vec<&str> = s
+        .split("\n\n")
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .collect();
+
+    for p in paras.iter().rev() {
+        if p.len() < 40 {
+            continue;
+        }
+        let lower = p.to_lowercase();
+        if lower.starts_with("the user wants") {
+            continue;
+        }
+        if lower.starts_with("**key elements") || lower.starts_with("*   **key") {
+            continue;
+        }
+        if lower.starts_with("1.  **") || lower.starts_with("1. **") || lower.starts_with("2.  **") {
+            continue;
+        }
+        if lower.starts_with("**1.") {
+            continue;
+        }
+        return (*p).to_string();
+    }
+
+    s.to_string()
+}
+
+fn caption_from_chat_message(content: &Option<Value>, reasoning: &Option<String>) -> String {
+    let main = flatten_message_content(content);
+    let main = main.trim();
+    if !main.is_empty() {
+        return main.to_string();
+    }
+    let Some(ref r) = reasoning else {
+        return String::new();
+    };
+    extract_caption_from_reasoning(r)
 }
 
 const DEFAULT_TIMEOUT_SECS: u32 = 120;
@@ -250,7 +360,10 @@ pub async fn generate_caption_lm_studio(
 
     #[derive(Deserialize)]
     struct Message {
-        content: String,
+        #[serde(default)]
+        content: Option<Value>,
+        #[serde(default)]
+        reasoning_content: Option<String>,
     }
 
     let chat_response: ChatResponse = match response.json().await {
@@ -267,8 +380,21 @@ pub async fn generate_caption_lm_studio(
     let caption = chat_response
         .choices
         .first()
-        .map(|c| c.message.content.trim().to_string())
+        .map(|c| {
+            caption_from_chat_message(&c.message.content, &c.message.reasoning_content)
+        })
         .unwrap_or_default();
+
+    if caption.is_empty() {
+        return Ok(CaptionResult {
+            success: false,
+            caption: String::new(),
+            error: Some(
+                "Empty caption from model. Reasoning/thinking models often fill `reasoning_content` first — raise max completion tokens, or use a non-reasoning vision model."
+                    .to_string(),
+            ),
+        });
+    }
 
     Ok(CaptionResult {
         success: true,
