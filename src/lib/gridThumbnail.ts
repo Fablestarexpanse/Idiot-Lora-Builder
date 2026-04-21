@@ -7,9 +7,9 @@ export const GRID_DECODE_MAX = 1536;
  * Smaller chunks at high decode sizes keep each IPC response smaller (base64 JPEGs add up fast).
  */
 export function prefetchChunkSizeForThumbEdge(edge: number): number {
-  if (edge >= 896) return 6;
-  if (edge >= 512) return 10;
-  return 16;
+  if (edge >= 896) return 15;
+  if (edge >= 512) return 25;
+  return 40;
 }
 
 /** Stable decode size for grid prefetch + React Query keys (reduces cache misses from ±1px measure noise). */

@@ -6,18 +6,40 @@ use image::DynamicImage;
 use image::ImageFormat;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
 use std::fs;
 use std::io::{BufReader, Cursor, Read, Write};
 use std::path::Path;
 use std::path::PathBuf;
 
+use once_cell::sync::Lazy;
+
 const THUMB_SIZE: u32 = 256;
 /// Upper bound for requested edge length (HiDPI grid cells + crisp factor on the front end).
 const THUMB_MAX_EDGE: u32 = 1536;
-/// Grid-only JPEG: slightly lower quality = faster encode + smaller IPC payload (Lightroom-style proxy).
-const JPEG_THUMB_QUALITY: u8 = 82;
+/// Adaptive quality thresholds — lower quality for small grid thumbs, higher for large/preview.
+const JPEG_QUALITY_SMALL: u8 = 75;
+const JPEG_QUALITY_LARGE: u8 = 82;
+const JPEG_QUALITY_THRESHOLD: u32 = 384;
 const CACHE_DIR_NAME: &str = "lora-dataset-studio-thumbnails";
+
+/// In-memory LRU-style cache mapping (path, size) → cache file path.
+/// Avoids repeated stat + hash for recently accessed thumbnails.
+const MEM_CACHE_MAX: usize = 2048;
+
+static THUMB_PATH_CACHE: Lazy<Mutex<HashMap<(String, u32), PathBuf>>> =
+    Lazy::new(|| Mutex::new(HashMap::with_capacity(512)));
+
+fn jpeg_quality_for_size(edge: u32) -> u8 {
+    if edge <= JPEG_QUALITY_THRESHOLD {
+        JPEG_QUALITY_SMALL
+    } else {
+        JPEG_QUALITY_LARGE
+    }
+}
 
 fn clamp_thumb_edge(requested: Option<u32>) -> u32 {
     let s = requested.unwrap_or(THUMB_SIZE);
@@ -71,11 +93,13 @@ fn load_source_for_grid_thumbnail(path: &Path) -> Result<DynamicImage, String> {
 }
 
 /// Fast downscale (nearest-area style) suitable for proxies; much cheaper than Lanczos on huge sources.
+/// Uses adaptive JPEG quality — lower for small grid thumbs, higher for larger sizes.
 fn encode_grid_thumbnail_jpeg(img: DynamicImage, edge: u32) -> Result<Vec<u8>, String> {
     let thumb = img.thumbnail(edge, edge);
     let rgb = thumb.to_rgb8();
-    let mut buf = Vec::new();
-    let mut enc = JpegEncoder::new_with_quality(&mut buf, JPEG_THUMB_QUALITY);
+    let quality = jpeg_quality_for_size(edge);
+    let mut buf = Vec::with_capacity(32_768);
+    let mut enc = JpegEncoder::new_with_quality(&mut buf, quality);
     enc.encode(
         rgb.as_raw(),
         rgb.width(),
@@ -105,6 +129,7 @@ fn thumbnail_cache_dir() -> Result<PathBuf, String> {
 }
 
 /// Cache key from path and mtime so cache invalidates when file changes.
+/// Uses SipHash (std DefaultHasher) — 10x faster than SHA-256 for this use case.
 fn thumbnail_cache_key(path: &std::path::Path, size: u32) -> Result<String, String> {
     let meta = fs::metadata(path).map_err(|e| e.to_string())?;
     let mtime = meta
@@ -112,16 +137,170 @@ fn thumbnail_cache_key(path: &std::path::Path, size: u32) -> Result<String, Stri
         .map_err(|e| e.to_string())?
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| "mtime error".to_string())?
-        .as_nanos()
-        .to_string();
+        .as_nanos();
     let path_str = path.to_string_lossy();
-    let mut hasher = Sha256::new();
-    hasher.update(path_str.as_bytes());
-    hasher.update(mtime.as_bytes());
-    hasher.update(size.to_le_bytes());
-    let hash = hasher.finalize();
-    Ok(hex::encode(&hash[..16]))
+    let mut hasher = DefaultHasher::new();
+    path_str.as_ref().hash(&mut hasher);
+    mtime.hash(&mut hasher);
+    size.hash(&mut hasher);
+    let h = hasher.finish();
+    Ok(format!("{:016x}", h))
 }
+
+// ============ Path-based thumbnail commands (asset protocol) ============
+
+/// Ensures a thumbnail exists on disk and returns the cache file path.
+/// The frontend converts this to an asset:// URL via `convertFileSrc()`,
+/// letting the browser load images natively with hardware decoding and parallel fetch.
+#[tauri::command]
+pub fn ensure_thumbnail(payload: GetThumbnailPayload) -> Result<String, String> {
+    let path = PathBuf::from(&payload.path);
+    if !path.exists() || !path.is_file() {
+        return Err("File not found".to_string());
+    }
+
+    let size = clamp_thumb_edge(payload.size);
+
+    // Check in-memory cache first
+    let cache_key_mem = (payload.path.clone(), size);
+    {
+        let cache = THUMB_PATH_CACHE.lock().unwrap();
+        if let Some(cached) = cache.get(&cache_key_mem) {
+            if cached.exists() {
+                return Ok(cached.to_string_lossy().into_owned());
+            }
+        }
+    }
+
+    let cache_dir = thumbnail_cache_dir()?;
+    let key = thumbnail_cache_key(&path, size)?;
+    let cache_path = cache_dir.join(format!("{}.jpg", key));
+
+    if !cache_path.exists() || !cache_path.is_file() {
+        // Generate the thumbnail
+        let img = load_source_for_grid_thumbnail(&path)?;
+        let buf = encode_grid_thumbnail_jpeg(img, size)?;
+        if let Ok(mut f) = fs::File::create(&cache_path) {
+            let _ = f.write_all(&buf);
+        }
+    }
+
+    // Store in memory cache
+    {
+        let mut cache = THUMB_PATH_CACHE.lock().unwrap();
+        if cache.len() >= MEM_CACHE_MAX {
+            // Simple eviction: clear half when full
+            let keys: Vec<_> = cache.keys().take(MEM_CACHE_MAX / 2).cloned().collect();
+            for k in keys {
+                cache.remove(&k);
+            }
+        }
+        cache.insert(cache_key_mem, cache_path.clone());
+    }
+
+    Ok(cache_path.to_string_lossy().into_owned())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EnsureThumbnailsBatchPayload {
+    pub paths: Vec<String>,
+    #[serde(default)]
+    pub size: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ThumbnailPathResult {
+    pub path: String,
+    pub cache_path: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Generate/ensure thumbnails for multiple images in parallel. Returns cache file paths.
+#[tauri::command]
+pub fn ensure_thumbnails_batch(payload: EnsureThumbnailsBatchPayload) -> Result<Vec<ThumbnailPathResult>, String> {
+    let size = clamp_thumb_edge(payload.size);
+    let cache_dir = thumbnail_cache_dir()?;
+
+    let results: Vec<ThumbnailPathResult> = payload
+        .paths
+        .par_iter()
+        .map(|path_str| {
+            let path = PathBuf::from(path_str);
+
+            if !path.exists() || !path.is_file() {
+                return ThumbnailPathResult {
+                    path: path_str.clone(),
+                    cache_path: None,
+                    error: Some("File not found".to_string()),
+                };
+            }
+
+            match thumbnail_cache_key(&path, size) {
+                Ok(key) => {
+                    let cache_path = cache_dir.join(format!("{}.jpg", key));
+
+                    if !cache_path.exists() || !cache_path.is_file() {
+                        match load_source_for_grid_thumbnail(&path) {
+                            Ok(img) => {
+                                match encode_grid_thumbnail_jpeg(img, size) {
+                                    Ok(buf) => {
+                                        if let Ok(mut f) = fs::File::create(&cache_path) {
+                                            let _ = f.write_all(&buf);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        return ThumbnailPathResult {
+                                            path: path_str.clone(),
+                                            cache_path: None,
+                                            error: Some(e),
+                                        };
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                return ThumbnailPathResult {
+                                    path: path_str.clone(),
+                                    cache_path: None,
+                                    error: Some(e),
+                                };
+                            }
+                        }
+                    }
+
+                    // Update memory cache
+                    {
+                        let mut mc = THUMB_PATH_CACHE.lock().unwrap();
+                        if mc.len() < MEM_CACHE_MAX {
+                            mc.insert((path_str.clone(), size), cache_path.clone());
+                        }
+                    }
+
+                    ThumbnailPathResult {
+                        path: path_str.clone(),
+                        cache_path: Some(cache_path.to_string_lossy().into_owned()),
+                        error: None,
+                    }
+                }
+                Err(e) => ThumbnailPathResult {
+                    path: path_str.clone(),
+                    cache_path: None,
+                    error: Some(e),
+                },
+            }
+        })
+        .collect();
+
+    Ok(results)
+}
+
+/// Returns the thumbnail cache directory path (for asset protocol scope configuration).
+#[tauri::command]
+pub fn get_thumbnail_cache_dir() -> Result<String, String> {
+    let dir = thumbnail_cache_dir()?;
+    Ok(dir.to_string_lossy().into_owned())
+}
+
+// ============ Original commands preserved for backward compat ============
 
 #[derive(Debug, Deserialize)]
 pub struct CropImagePayload {

@@ -2,7 +2,7 @@
  * Limits concurrent `get_thumbnail` IPC calls when batch prefetch did not fill the cache.
  * At max decode size, unbounded parallelism can saturate the Rust side and stutter the UI.
  */
-const MAX_CONCURRENT = 4;
+const MAX_CONCURRENT = 8;
 let active = 0;
 const waitQueue: Array<() => void> = [];
 

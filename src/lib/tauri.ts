@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   ImageEntry,
@@ -83,6 +83,54 @@ export async function getThumbnailsBatch(paths: string[], size = 256): Promise<T
   return invoke<ThumbnailResult[]>("get_thumbnails_batch", {
     payload: { paths, size },
   });
+}
+
+// ============ Path-based thumbnail functions (asset protocol — fast) ============
+
+/**
+ * Ensures a thumbnail exists on disk and returns a browser-loadable asset URL.
+ * Uses Tauri asset protocol — bypasses base64 IPC overhead entirely.
+ * The browser loads the image natively with hardware decoding and parallel fetch.
+ */
+export async function ensureThumbnailUrl(
+  path: string,
+  size?: number
+): Promise<string> {
+  const cachePath = await invoke<string>("ensure_thumbnail", {
+    payload: { path, size },
+  });
+  return convertFileSrc(cachePath);
+}
+
+export interface ThumbnailPathResult {
+  path: string;
+  cache_path: string | null;
+  error: string | null;
+}
+
+/**
+ * Batch-ensure thumbnails on disk and return browser-loadable asset URLs.
+ * Returns Map<originalPath, assetUrl> for cache seeding.
+ */
+export async function ensureThumbnailUrlsBatch(
+  paths: string[],
+  size = 256
+): Promise<Map<string, string>> {
+  const results = await invoke<ThumbnailPathResult[]>("ensure_thumbnails_batch", {
+    payload: { paths, size },
+  });
+  const map = new Map<string, string>();
+  for (const r of results) {
+    if (r.cache_path) {
+      map.set(r.path, convertFileSrc(r.cache_path));
+    }
+  }
+  return map;
+}
+
+/** Returns the thumbnail cache directory path. */
+export async function getThumbnailCacheDir(): Promise<string> {
+  return invoke<string>("get_thumbnail_cache_dir");
 }
 
 /** Load image as data URL for preview/crop (works without asset protocol). */

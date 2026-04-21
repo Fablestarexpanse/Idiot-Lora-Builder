@@ -16,7 +16,7 @@ import {
   prefetchChunkSizeForThumbEdge,
 } from "@/lib/gridThumbnail";
 import { buildBatchCaptionTargets } from "@/lib/batchCaptionTargets";
-import { getThumbnailsBatch } from "@/lib/tauri";
+import { ensureThumbnailUrlsBatch } from "@/lib/tauri";
 import { matchThumbnailPreset } from "@/lib/thumbnailPresets";
 import { ThumbnailCell } from "./ThumbnailCell";
 
@@ -199,7 +199,7 @@ export const ImageGrid = memo(function ImageGrid() {
     count: rowCount,
     getScrollElement: () => gridRef.current,
     estimateSize: () => ROW_HEIGHT,
-    overscan: 1,
+    overscan: 3,
     measureElement: (element) => element.getBoundingClientRect().height + ROW_GAP,
   });
 
@@ -223,7 +223,7 @@ export const ImageGrid = memo(function ImageGrid() {
         scrollActiveRef.current = false;
         scrollIdleTimerRef.current = undefined;
         setScrollIdleEpoch((n) => n + 1);
-      }, 200);
+      }, 80);
     };
 
     el.addEventListener("scroll", onScroll, { passive: true });
@@ -248,7 +248,7 @@ export const ImageGrid = memo(function ImageGrid() {
             .filter((n) => Number.isFinite(n))
         : [];
       if (indices.length === 0) return;
-      const padded = expandRowIndicesForPrefetch(indices, rowCount, 1);
+      const padded = expandRowIndicesForPrefetch(indices, rowCount, 3);
       const paths = collectPathsForRowIndices(images, columnCount, padded);
       if (paths.length === 0) return;
       const chunkSize = prefetchChunkSizeForThumbEdge(sharedThumbSize);
@@ -256,18 +256,16 @@ export const ImageGrid = memo(function ImageGrid() {
       for (const chunk of chunks) {
         if (cancelled) return;
         try {
-          const results = await getThumbnailsBatch(chunk, sharedThumbSize);
+          const urlMap = await ensureThumbnailUrlsBatch(chunk, sharedThumbSize);
           if (cancelled) return;
-          for (const r of results) {
-            if (r.data_url) {
-              queryClient.setQueryData(["thumbnail", r.path, sharedThumbSize], r.data_url);
-            }
+          for (const [imgPath, assetUrl] of urlMap) {
+            queryClient.setQueryData(["thumbnail", imgPath, sharedThumbSize], assetUrl);
           }
         } catch {
           /* cells fall back to limited single-invoke fetch */
         }
       }
-    }, 180);
+    }, 50);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);

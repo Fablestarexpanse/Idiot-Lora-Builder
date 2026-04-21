@@ -2,14 +2,13 @@ import { useState, useRef, useEffect, memo, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Smile, Frown, Wrench, Loader2, Maximize2, Crop, Trash2, X, Eraser, Check, Sparkles } from "lucide-react";
 import {
-  getThumbnailDataUrl,
+  ensureThumbnailUrl,
   writeCaption,
   setImageRating,
   deleteImage,
   generateCaptionLmStudio,
 } from "@/lib/tauri";
 import { buildEffectivePrompt } from "@/lib/promptBuilder";
-import { getThumbnailDecodeDpr, thumbEdgeFromCssPx } from "@/lib/displayDensity";
 import { alignThumbRequestSize } from "@/lib/gridThumbnail";
 import { withThumbnailInvokeLimit } from "@/lib/thumbnailInvokeLimit";
 import { useAiStore } from "@/stores/aiStore";
@@ -120,7 +119,6 @@ export const ThumbnailCell = memo(function ThumbnailCell({
   const cellRef = useRef<HTMLDivElement>(null);
   const thumbBoxRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
-  const [measuredThumbEdge, setMeasuredThumbEdge] = useState<number | null>(null);
   
   const selectedImage = useSelectionStore((s) => s.selectedImage);
   const setSelectedImage = useSelectionStore((s) => s.setSelectedImage);
@@ -152,7 +150,7 @@ export const ThumbnailCell = memo(function ThumbnailCell({
       },
       {
         root: root instanceof Element ? root : null,
-        rootMargin: "48px",
+        rootMargin: "300px",
       }
     );
 
@@ -160,22 +158,6 @@ export const ThumbnailCell = memo(function ThumbnailCell({
 
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    const el = thumbBoxRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const cr = entries[0]?.contentRect;
-      if (!cr) return;
-      const css = Math.min(cr.width, cr.height);
-      if (css < 8) return;
-      const raw = Math.min(1536, thumbEdgeFromCssPx(css, getThumbnailDecodeDpr()));
-      const aligned = alignThumbRequestSize(raw, thumbnailMax);
-      setMeasuredThumbEdge((prev) => (prev === aligned ? prev : aligned));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [thumbnailMax]);
 
   // Use individual selectors to avoid unnecessary re-renders
   const provider = useAiStore((s) => s.provider);
@@ -398,14 +380,14 @@ export const ThumbnailCell = memo(function ThumbnailCell({
   }
 
   const requestThumbSize = alignThumbRequestSize(
-    measuredThumbEdge ?? fallbackThumbEdge,
+    fallbackThumbEdge,
     thumbnailMax
   );
 
   const { data: src, isLoading, isError } = useQuery({
     queryKey: ["thumbnail", entry.path, requestThumbSize],
     queryFn: () =>
-      withThumbnailInvokeLimit(() => getThumbnailDataUrl(entry.path, requestThumbSize)),
+      withThumbnailInvokeLimit(() => ensureThumbnailUrl(entry.path, requestThumbSize)),
     staleTime: 30 * 60 * 1000,
     gcTime: 45 * 60 * 1000,
     enabled: isVisible && requestThumbSize > 0,
