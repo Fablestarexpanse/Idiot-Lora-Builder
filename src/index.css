@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface: 220 14% 10%;
+  --surface-elevated: 220 14% 14%;
+  --border: 220 10% 22%;
+}
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+  body {
+    @apply bg-surface text-gray-100 min-h-screen;
+  }
+}
+
+/* Keyboard focus ring */
+:focus-visible {
+  @apply outline-none ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900;
+}

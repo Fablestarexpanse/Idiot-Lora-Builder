@@ -1,0 +1,10 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for LoRA Dataset Studio",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "shell:allow-open"
+  ]
+}
