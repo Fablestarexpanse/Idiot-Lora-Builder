@@ -1,6 +1,6 @@
 [package]
 name = "lora-dataset-studio"
-version = "0.5.0"
+version = "0.6.0"
 description = "LoRA Dataset Studio - Prepare image datasets for AI model training"
 authors = ["PromptWaffle"]
 license = "MIT"
@@ -20,13 +20,17 @@ walkdir = "2"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 kamadak-exif = "0.6"
 base64 = "0.22"
-reqwest = { version = "0.12", features = ["json"] }
-tokio = { version = "1", features = ["process", "io-util", "macros", "rt"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+tokio = { version = "1", features = ["process", "io-util", "macros", "rt", "time"] }
 futures = "0.3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
 hex = "0.4"
 once_cell = "1.19"
+# load-dynamic: loads onnxruntime.dll at runtime (downloaded by models.rs) instead of
+# static-linking pyke's prebuilt binaries, which require a newer MSVC STL than many
+# toolchains have (unresolved __std_find_first_of_trivial_pos_* at link time).
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic", "ndarray"] }
 rayon = "1.10"
 
 [features]

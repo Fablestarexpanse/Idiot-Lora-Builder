@@ -12,9 +12,8 @@ A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, et
 - **Grid & ratings** — Open a folder, rate images (Good / Bad / Needs Edit), multi-select, virtualized grid for thousands of images
 - **Filtering & sorting** — Filter by rating, caption state, or search text; sort by name/size/dimensions
 - **Tag editing** — Inline captions, right-panel tag editor, search/replace, trigger word, add-tag-to-all with preview
-- **AI captioning** — LM Studio or Ollama; vision models; single or batch; rating filter; optional preview-before-save
-- **Preview & crop** — Full-size view with zoom, prev/next; crop tool with flip/rotate, square output sizes (e.g. 512/1024), save-as-new, and multi-crop (several regions from one image). Per-image crop status tracking.
-  - Note: the crop tool's "face detection" is currently a **placeholder** — it returns a centered region, not real detection. Real ONNX-based detection is planned.
+- **AI captioning** — Built-in local captioner (one-click download of a Qwen3-VL vision model, runs fully offline on GPU via Vulkan or CPU), or connect to LM Studio / Ollama; single or batch; rating filter; Prose / Danbooru / e621 caption style presets
+- **Preview & crop** — Full-size view with zoom, prev/next; crop tool with flip/rotate, square output sizes (e.g. 512/1024), save-as-new, and multi-crop (several regions from one image). Per-image crop status tracking. Face detection (YuNet ONNX, downloaded on first use) auto-centers crops on faces.
 - **Batch rename** — Rename image + caption pairs with a pattern and sequential numbering
 - **Export** — Folder or ZIP; export all, selected, or by rating (good/bad/needs_edit subfolders); trigger word, sequential naming
 - **Tools** — Find duplicates (SHA-256 content hash), dataset stats, clear all tags (type "clear" to confirm), clear all ratings
@@ -139,7 +138,8 @@ src/                    — React app
 src-tauri/              — Rust backend
   src/commands/         — one module per feature: project, images (thumbnails/crop/resize),
                           captions, ratings, crop_status, export, batch_rename,
-                          lm_studio, ollama, detect (face-detection placeholder)
+                          lm_studio, ollama, detect (YuNet face detection),
+                          models (built-in model downloads), llama_server (local captioner)
 ```
 
 The frontend never touches the filesystem directly — every operation goes through a Tauri command (`src/lib/tauri.ts` documents the full command list and payload conventions). Heavy work (image decode, hashing, zipping) runs in Rust on blocking threads; thumbnails are written to a disk cache and loaded by the webview through the asset protocol.

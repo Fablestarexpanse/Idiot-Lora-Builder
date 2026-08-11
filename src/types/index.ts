@@ -52,7 +52,7 @@ export interface FilterState {
 
 // ============ AI Types ============
 
-export type AiProvider = "lm_studio" | "ollama";
+export type AiProvider = "lm_studio" | "ollama" | "builtin";
 
 /** LM Studio connection status. */
 export interface ConnectionStatus {
@@ -91,6 +91,41 @@ export interface OllamaSettings {
   base_url: string;
   model: string | null;
 }
+
+// ============ Built-in Captioner ============
+
+export type BuiltinModelId = "qwen3-vl-8b" | "qwen3-vl-4b";
+export type BuiltinBackend = "vulkan" | "cpu";
+
+/** Registry entry for a built-in captioner model (mirrors the backend registry). */
+export interface BuiltinModelInfo {
+  id: BuiltinModelId;
+  label: string;
+  /** Human-readable approximate download size. */
+  downloadSize: string;
+  /** Human-readable memory requirement. */
+  memoryNote: string;
+}
+
+export const BUILTIN_MODELS: BuiltinModelInfo[] = [
+  {
+    id: "qwen3-vl-8b",
+    label: "Qwen3-VL 8B (recommended)",
+    downloadSize: "~5.8 GB",
+    memoryNote: "needs ~8 GB RAM/VRAM",
+  },
+  {
+    id: "qwen3-vl-4b",
+    label: "Qwen3-VL 4B (lighter/faster)",
+    downloadSize: "~3 GB",
+    memoryNote: "needs ~5 GB RAM/VRAM",
+  },
+];
+
+export const BUILTIN_BACKENDS: { id: BuiltinBackend; label: string }[] = [
+  { id: "vulkan", label: "GPU (Vulkan — NVIDIA/AMD/Intel)" },
+  { id: "cpu", label: "CPU only (slower)" },
+];
 
 /** Prompt template. May contain placeholders: {length}, {name}. */
 export interface PromptTemplate {
@@ -263,5 +298,26 @@ export const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
     prompt:
       "Write a caption for this image as if it were being used for a social media post.",
     provider: "lm_studio",
+  },
+  {
+    id: "builtin-prose",
+    name: "Built-in: Prose",
+    prompt:
+      "Describe this image in 1-3 natural-language sentences suitable as a training caption. State the main subject first, then key visual details: appearance, clothing, pose, setting, lighting, and style/medium. Use confident, concrete wording. Output ONLY the description — no preamble, no quotes, no phrases like \"This image shows\", and no commentary.",
+    provider: "builtin",
+  },
+  {
+    id: "builtin-danbooru",
+    name: "Built-in: Danbooru Tags",
+    prompt:
+      "Output ONLY a comma-separated list of lowercase danbooru-style tags for this image, with underscores instead of spaces (e.g. 1girl, long_hair, blue_eyes, school_uniform, outdoors). Cover subject count, appearance, clothing, accessories, pose, expression, actions, background, and composition. No prose, no sentences, no explanations, no preamble — nothing but the tag list.",
+    provider: "builtin",
+  },
+  {
+    id: "builtin-e621",
+    name: "Built-in: e621 Tags",
+    prompt:
+      "Output ONLY a comma-separated list of lowercase e621-style tags for this image, with underscores instead of spaces, using e621/furry vocabulary (e.g. anthro, feral, male, female, canine, felid, fur_color tags, clothing, pose, expression, background, solo/duo/group). No prose, no sentences, no explanations, no preamble — nothing but the tag list.",
+    provider: "builtin",
   },
 ];

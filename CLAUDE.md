@@ -57,11 +57,18 @@ caption, crop status) prefer `setQueryData` merges over full `invalidateQueries`
 refetches the whole project and thrashes the grid. Full invalidation is fine for bulk ops
 (clear-all, batch rename).
 
+## Built-in captioner (v0.6.0)
+
+- `models.rs` downloads the llama.cpp server runtime (pinned release tag) and Qwen3-VL GGUF
+  weights into `app_local_data_dir()/builtin/` with resume + progress events;
+  `llama_server.rs` manages the sidecar process and returns an OpenAI-compatible base URL.
+  The frontend reuses the existing LM Studio caption commands against that URL — do not add
+  a parallel caption client.
+- `detect_faces` runs real YuNet ONNX inference via `ort` (model auto-downloaded, session
+  cached globally). Failures return an empty list, never fabricated regions.
+
 ## Honesty notes
 
-- `detect_faces` in `src-tauri/src/commands/detect.rs` is a **placeholder**: it returns a
-  centered region (40% x 50%) with a fabricated confidence, not real face detection. Do not
-  document or advertise it as working detection.
 - `batch_resize` exists in the backend (`images.rs`) and `src/lib/tauri.ts` but has **no UI**.
 
 ## Misc

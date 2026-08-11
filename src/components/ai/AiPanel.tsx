@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Sparkles,
   Wifi,
@@ -7,6 +7,7 @@ import {
   Play,
   X,
   Square,
+  Loader2,
 } from "lucide-react";
 import { useAiStore } from "@/stores/aiStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -18,8 +19,11 @@ import {
   testOllamaConnection,
   generateCaptionsBatch,
   writeCaption,
+  getBuiltinStatus,
+  ensureBuiltinServer,
 } from "@/lib/tauri";
 import { Modal } from "@/components/ui/Modal";
+import { BuiltinSetup } from "@/components/ai/BuiltinSetup";
 import { buildEffectivePrompt } from "@/lib/promptBuilder";
 import { buildBatchCaptionTargets } from "@/lib/batchCaptionTargets";
 import { DEFAULT_PROMPT_TEMPLATES } from "@/types";
@@ -29,6 +33,7 @@ export function AiPanel() {
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [templateSearch, setTemplateSearch] = useState("");
+  const [builtinStarting, setBuiltinStarting] = useState(false);
   const cancelBatchRef = useRef(false);
 
   const queryClient = useQueryClient();
@@ -55,6 +60,8 @@ export function AiPanel() {
   const ollama = useAiStore((s) => s.ollama);
   const setOllamaBaseUrl = useAiStore((s) => s.setOllamaBaseUrl);
   const setOllamaModel = useAiStore((s) => s.setOllamaModel);
+  const builtinModelId = useAiStore((s) => s.builtinModelId);
+  const builtinBackend = useAiStore((s) => s.builtinBackend);
   const promptTemplates = useAiStore((s) => s.promptTemplates);
   const selectedTemplateId = useAiStore((s) => s.selectedTemplateId);
   const setSelectedTemplateId = useAiStore((s) => s.setSelectedTemplateId);
@@ -106,6 +113,14 @@ export function AiPanel() {
     ),
     [promptTemplates, templateSearch]
   );
+
+  // Shares the queryKey with BuiltinSetup so both see the same status.
+  const builtinStatusQuery = useQuery({
+    queryKey: ["builtin-status", builtinModelId, builtinBackend],
+    queryFn: () => getBuiltinStatus(builtinModelId, builtinBackend),
+    enabled: provider === "builtin",
+  });
+  const builtinReady = builtinStatusQuery.data?.ready === true;
 
   const testConnectionMutation = useMutation({
     mutationFn: () =>
@@ -160,8 +175,23 @@ export function AiPanel() {
     cancelBatchRef.current = false;
 
     try {
-      const baseUrl = provider === "ollama" ? ollama.base_url : lmStudio.base_url;
-      const model = provider === "ollama" ? ollama.model : lmStudio.model;
+      let baseUrl: string;
+      let model: string | null;
+      if (provider === "builtin") {
+        // Starts llama-server if needed; the first call can take minutes
+        // while the model loads.
+        setBuiltinStarting(true);
+        try {
+          baseUrl = await ensureBuiltinServer(builtinModelId, builtinBackend);
+        } finally {
+          setBuiltinStarting(false);
+          queryClient.invalidateQueries({ queryKey: ["builtin-server-status"] });
+        }
+        model = null;
+      } else {
+        baseUrl = provider === "ollama" ? ollama.base_url : lmStudio.base_url;
+        model = provider === "ollama" ? ollama.model : lmStudio.model;
+      }
       const chunkSize = 5;
 
       for (let i = 0; i < targetImages.length; i += chunkSize) {
@@ -305,6 +335,17 @@ export function AiPanel() {
           >
             Ollama
           </button>
+          <button
+            type="button"
+            onClick={() => setProvider("builtin")}
+            className={`min-w-[6rem] flex-1 shrink-0 whitespace-nowrap rounded px-2 py-2 text-xs font-medium ${
+              provider === "builtin"
+                ? "bg-purple-600 text-white"
+                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+            }`}
+          >
+            Built-in (local)
+          </button>
         </div>
       </div>
 
@@ -328,7 +369,9 @@ export function AiPanel() {
 
       {/* Provider-specific settings */}
       <div className="space-y-3 border-b border-border bg-surface/50 p-3">
-        {provider === "lm_studio" ? (
+        {provider === "builtin" ? (
+          <BuiltinSetup />
+        ) : provider === "lm_studio" ? (
           <>
             <div>
               <label className="mb-1 block text-xs text-gray-500">LM Studio URL</label>
@@ -670,6 +713,13 @@ export function AiPanel() {
       <div className="space-y-2 p-3">
         {isGenerating ? (
           <div className="space-y-2">
+            {builtinStarting && (
+              <p className="flex items-center gap-2 text-xs text-purple-300">
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                Starting local captioner… the first start can take a few minutes
+                while the model loads.
+              </p>
+            )}
             <div className="flex gap-2">
               <button
                 type="button"
@@ -700,7 +750,7 @@ export function AiPanel() {
             onClick={handleBatchGenerate}
             disabled={
               batchTargetCount === 0 ||
-              !isConnected
+              (provider === "builtin" ? !builtinReady : !isConnected)
             }
             className="flex w-full items-center justify-center gap-2 rounded bg-gray-700 px-3 py-2 text-sm font-medium text-gray-200 hover:bg-gray-600 disabled:opacity-50"
           >
@@ -723,6 +773,14 @@ export function AiPanel() {
         <div className="p-3 text-center">
           <p className="text-xs text-gray-500">
             Start Ollama, pull a vision model (e.g. llava), then click Test above
+          </p>
+        </div>
+      )}
+
+      {provider === "builtin" && !builtinReady && !builtinStatusQuery.isLoading && (
+        <div className="p-3 text-center">
+          <p className="text-xs text-gray-500">
+            Download the built-in model above to enable captioning
           </p>
         </div>
       )}

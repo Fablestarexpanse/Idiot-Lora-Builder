@@ -40,7 +40,21 @@ pub fn run() {
             commands::crop_status::clear_all_crop_statuses,
             commands::batch_rename::batch_rename,
             commands::detect::detect_faces,
+            commands::models::get_builtin_status,
+            commands::models::download_builtin,
+            commands::models::cancel_builtin_download,
+            commands::models::delete_builtin_model,
+            commands::llama_server::ensure_builtin_server,
+            commands::llama_server::stop_builtin_server,
+            commands::llama_server::get_builtin_server_status,
+            commands::llama_server::ensure_face_model,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running LoRA Dataset Studio");
+        .build(tauri::generate_context!())
+        .expect("error while running LoRA Dataset Studio")
+        .run(|_app, event| {
+            // Make sure the bundled llama-server child process dies with the app.
+            if let tauri::RunEvent::Exit = event {
+                commands::llama_server::shutdown();
+            }
+        });
 }

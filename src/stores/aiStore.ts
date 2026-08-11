@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
   AiProvider,
+  BuiltinBackend,
+  BuiltinModelId,
   CaptionLength,
   LmStudioSettings,
   OllamaSettings,
@@ -38,6 +40,12 @@ interface AiState {
   ollama: OllamaSettings;
   setOllamaBaseUrl: (url: string) => void;
   setOllamaModel: (model: string | null) => void;
+
+  // Built-in captioner settings
+  builtinModelId: BuiltinModelId;
+  setBuiltinModelId: (id: BuiltinModelId) => void;
+  builtinBackend: BuiltinBackend;
+  setBuiltinBackend: (backend: BuiltinBackend) => void;
 
   // Prompt templates
   promptTemplates: PromptTemplate[];
@@ -144,6 +152,12 @@ export const useAiStore = create<AiState>()(
           ollama: { ...state.ollama, model },
         })),
 
+      // Built-in captioner
+      builtinModelId: "qwen3-vl-8b",
+      setBuiltinModelId: (builtinModelId) => set({ builtinModelId }),
+      builtinBackend: "vulkan",
+      setBuiltinBackend: (builtinBackend) => set({ builtinBackend }),
+
       // Prompt templates
       promptTemplates: DEFAULT_PROMPT_TEMPLATES,
       selectedTemplateId: "descriptive",
@@ -206,6 +220,8 @@ export const useAiStore = create<AiState>()(
         extraOptionIds: state.extraOptionIds,
         lmStudio: state.lmStudio,
         ollama: state.ollama,
+        builtinModelId: state.builtinModelId,
+        builtinBackend: state.builtinBackend,
         batchConcurrency: state.batchConcurrency,
         captionMaxTokens: state.captionMaxTokens,
         batchCaptionOnlyNoTags: state.batchCaptionOnlyNoTags,

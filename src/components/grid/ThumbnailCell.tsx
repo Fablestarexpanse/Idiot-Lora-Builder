@@ -7,6 +7,8 @@ import {
   setImageRating,
   deleteImage,
   generateCaptionLmStudio,
+  ensureBuiltinServer,
+  getBuiltinServerStatus,
 } from "@/lib/tauri";
 import { buildEffectivePrompt } from "@/lib/promptBuilder";
 import { alignThumbRequestSize } from "@/lib/gridThumbnail";
@@ -100,6 +102,8 @@ export const ThumbnailCell = memo(function ThumbnailCell({
   const provider = useAiStore((s) => s.provider);
   const lmStudio = useAiStore((s) => s.lmStudio);
   const ollama = useAiStore((s) => s.ollama);
+  const builtinModelId = useAiStore((s) => s.builtinModelId);
+  const builtinBackend = useAiStore((s) => s.builtinBackend);
   const captionMaxTokens = useAiStore((s) => s.captionMaxTokens);
   const customPrompt = useAiStore((s) => s.customPrompt);
   const promptTemplates = useAiStore((s) => s.promptTemplates);
@@ -215,10 +219,25 @@ export const ThumbnailCell = memo(function ThumbnailCell({
   const model = provider === "ollama" ? ollama.model : lmStudio.model;
   const generateCaptionMutation = useMutation({
     mutationFn: async () => {
+      let effectiveBaseUrl = baseUrl;
+      let effectiveModel = model;
+      if (provider === "builtin") {
+        // The built-in provider reuses the LM Studio commands against the
+        // local llama-server. Starting it can take minutes on first use.
+        const serverStatus = await getBuiltinServerStatus();
+        if (!serverStatus.running) {
+          showToast(
+            "Starting local captioner… the first caption can take a few minutes while the model loads.",
+            "info"
+          );
+        }
+        effectiveBaseUrl = await ensureBuiltinServer(builtinModelId, builtinBackend);
+        effectiveModel = null;
+      }
       return generateCaptionLmStudio(
         entry.path,
-        baseUrl,
-        model,
+        effectiveBaseUrl,
+        effectiveModel,
         effectivePrompt,
         captionMaxTokens,
         lmStudio.timeout_secs ?? 120,
@@ -252,7 +271,8 @@ export const ThumbnailCell = memo(function ThumbnailCell({
       }
     },
     onError: (err: Error) => {
-      showToast(err.message);
+      // Tauri commands reject with plain strings, not Error instances.
+      showToast(err instanceof Error ? err.message : String(err));
     },
   });
 

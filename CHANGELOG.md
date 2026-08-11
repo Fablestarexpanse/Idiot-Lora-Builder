@@ -3,6 +3,28 @@
 All notable changes to LoRA Dataset Studio are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0] - 2026-08-11
+
+### Added
+
+- **Built-in local AI captioner.** No more external LM Studio/Ollama setup
+  required: pick "Built-in (local)" as the caption provider and the app
+  downloads everything itself — the llama.cpp server runtime plus a quantized
+  Qwen3-VL vision model (8B recommended, ~5.8 GB; or 4B lighter, ~3 GB).
+  Nothing downloads until you click the button; downloads show progress, can be
+  cancelled, and resume where they left off. Runs on GPU via Vulkan
+  (NVIDIA/AMD/Intel) or CPU-only. The server starts on demand on a private
+  localhost port, can be stopped from the panel to free memory, and is shut
+  down with the app. Single-image and batch captioning both work with it.
+- **Caption style presets:** three new built-in prompt templates — Prose
+  (natural language), Danbooru tags, and e621 tags — matching what tag-trained
+  base models expect.
+- **Real face detection.** The crop tool's auto-centering now uses the YuNet
+  ONNX face detector (model + ONNX Runtime downloaded on first use, ~80 MB
+  total) with real confidence scores and non-max suppression, replacing the
+  previous placeholder that always returned a centered box. On any failure it
+  reports no faces instead of fake data.
+
 ## [0.5.0] - 2026-08-11
 
 Major performance overhaul and full-codebase audit. Large datasets now load

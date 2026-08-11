@@ -12,6 +12,8 @@ import type {
   BatchRenameOptions,
   BatchRenameResult,
   FaceRegion,
+  BuiltinModelId,
+  BuiltinBackend,
 } from "@/types";
 
 /**
@@ -21,8 +23,10 @@ import type {
  *   test_lm_studio_connection, test_ollama_connection, generate_caption_lm_studio, generate_captions_batch,
  *   clear_all_ratings, set_rating, get_ratings, batch_rename.
  * - Commands that expect the args object directly (no "payload" key): find_duplicates, delete_image,
- *   batch_resize, export_dataset, export_by_rating.
- * - No args: get_resource_stats.
+ *   batch_resize, export_dataset, export_by_rating, get_builtin_status, download_builtin,
+ *   ensure_builtin_server.
+ * - No args: get_resource_stats, cancel_builtin_download, stop_builtin_server,
+ *   get_builtin_server_status.
  */
 
 export async function openFolder(): Promise<string | null> {
@@ -271,6 +275,86 @@ export async function generateCaptionsBatch(
       concurrency,
     },
   });
+}
+
+// ============ Built-in Captioner ============
+
+export interface BuiltinComponentStatus {
+  id: "llama-server" | "model" | "mmproj";
+  installed: boolean;
+  approx_bytes: number;
+  partial_bytes: number;
+}
+
+export interface BuiltinStatus {
+  ready: boolean;
+  components: BuiltinComponentStatus[];
+  missing_bytes: number;
+  downloading: boolean;
+}
+
+/** Payload of the "builtin-download-progress" event emitted during download_builtin. */
+export interface BuiltinDownloadProgress {
+  component: string;
+  phase: "downloading" | "extracting" | "done" | "error" | "cancelled";
+  received: number;
+  total: number;
+  overall_received: number;
+  overall_total: number;
+  error: string | null;
+}
+
+export interface BuiltinServerStatus {
+  running: boolean;
+  model_id: string | null;
+  backend: string | null;
+  base_url: string | null;
+}
+
+/** Check install status of the built-in captioner components for a model/backend pair. */
+export async function getBuiltinStatus(
+  modelId: BuiltinModelId,
+  backend: BuiltinBackend
+): Promise<BuiltinStatus> {
+  return invoke<BuiltinStatus>("get_builtin_status", { modelId, backend });
+}
+
+/**
+ * Download all missing built-in captioner components. Long-running; progress is
+ * emitted on the "builtin-download-progress" event. Rejects with an error string
+ * (including "cancelled"). Partial files are kept, so re-running resumes.
+ */
+export async function downloadBuiltin(
+  modelId: BuiltinModelId,
+  backend: BuiltinBackend
+): Promise<void> {
+  return invoke<void>("download_builtin", { modelId, backend });
+}
+
+/** Cancel an in-progress built-in download (partial files kept for resume). */
+export async function cancelBuiltinDownload(): Promise<void> {
+  return invoke<void>("cancel_builtin_download");
+}
+
+/**
+ * Start (or reuse) the local llama-server and wait for the model to load.
+ * Returns the base URL (e.g. "http://127.0.0.1:52341"). The first call after
+ * startup can take 30-240s while the model loads.
+ */
+export async function ensureBuiltinServer(
+  modelId: BuiltinModelId,
+  backend: BuiltinBackend
+): Promise<string> {
+  return invoke<string>("ensure_builtin_server", { modelId, backend });
+}
+
+/** Stop the local llama-server (frees RAM/VRAM). */
+export async function stopBuiltinServer(): Promise<void> {
+  return invoke<void>("stop_builtin_server");
+}
+
+export async function getBuiltinServerStatus(): Promise<BuiltinServerStatus> {
+  return invoke<BuiltinServerStatus>("get_builtin_server_status");
 }
 
 // ============ Export Functions ============
