@@ -1,3 +1,6 @@
+//! Face/region detection for crop centering (currently a placeholder region),
+//! with an mtime-keyed result cache.
+
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::time::UNIX_EPOCH;

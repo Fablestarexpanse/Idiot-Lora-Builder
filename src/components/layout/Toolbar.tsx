@@ -91,16 +91,16 @@ export function Toolbar() {
         </button>
 
 
-        {/* Clear all prompts */}
+        {/* Clear all tags */}
         <button
           type="button"
           className="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium text-gray-200 hover:bg-amber-600/20 hover:text-amber-400 disabled:opacity-50"
-          aria-label="Clear all prompts on all images"
+          aria-label="Clear all tags on all images"
           onClick={() => setShowClearAllTags(true)}
           disabled={!rootPath}
         >
           <Eraser className="h-4 w-4" />
-          Clear All Prompts
+          Clear All Tags
         </button>
 
         {/* Clear all ratings */}

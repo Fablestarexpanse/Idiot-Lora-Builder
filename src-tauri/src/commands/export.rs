@@ -7,21 +7,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+use super::common::{caption_path_for as caption_path, is_image_path as is_image, normalize_rel_key};
 use super::ratings::{load_ratings, ImageRating, RatingsData};
-
-const IMAGE_EXT: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp"];
-
-fn is_image(p: &Path) -> bool {
-    let ext = match p.extension().and_then(|e| e.to_str()) {
-        Some(e) => e.to_lowercase(),
-        None => return false,
-    };
-    IMAGE_EXT.iter().any(|&e| e.eq_ignore_ascii_case(&ext))
-}
-
-fn caption_path(img: &Path) -> PathBuf {
-    img.with_extension("txt")
-}
 
 // ============ Export to folder or ZIP ============
 
@@ -54,7 +41,7 @@ pub struct ExportResult {
 
 /// Normalize relative path: forward slashes, trim leading slashes.
 fn normalize_rel(s: &str) -> String {
-    s.replace('\\', "/").trim_start_matches(|c| c == '/' || c == '\\').to_string()
+    normalize_rel_key(s).trim_start_matches('/').to_string()
 }
 
 /// Normalize for case-insensitive path comparison (e.g. Windows).
@@ -375,7 +362,7 @@ fn export_by_rating_sync(options: ExportByRatingOptions) -> Result<ExportResult,
             continue;
         }
         let rel = match p.strip_prefix(&canonical) {
-            Ok(r) => r.to_string_lossy().replace('\\', "/"),
+            Ok(r) => normalize_rel_key(&r.to_string_lossy()),
             Err(_) => continue,
         };
         let rel_key = normalize_rel(&rel);

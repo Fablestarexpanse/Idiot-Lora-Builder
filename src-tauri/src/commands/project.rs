@@ -1,3 +1,6 @@
+//! Project scanning: open a dataset folder, list images with caption/rating
+//! metadata, find duplicates by content hash, and load image dimensions.
+
 use image::ImageReader;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -5,31 +8,15 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
 
+use super::common::{caption_path_for, is_image_path, normalize_rel_key};
 use super::ratings::{load_ratings, ImageRating};
 
 const PROGRESS_EVENT: &str = "project-load-progress";
-
-const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp"];
-
-fn is_image_path(path: &Path) -> bool {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase());
-    ext.as_ref()
-        .map(|e| IMAGE_EXTENSIONS.contains(&e.as_str()))
-        .unwrap_or(false)
-}
-
-/// Get the caption file path for an image (same name, .txt extension).
-fn caption_path_for(image_path: &Path) -> PathBuf {
-    image_path.with_extension("txt")
-}
 
 /// Parse comma-separated tags from raw caption text.
 fn parse_tags(raw: &str) -> Vec<String> {
@@ -111,7 +98,7 @@ fn open_project_sync(app: AppHandle, payload: OpenProjectPayload) -> Result<Vec<
             let relative = path_buf
                 .strip_prefix(&canonical_root)
                 .unwrap_or_else(|_| path_buf.as_path());
-            let relative_path = relative.to_str()?.replace('\\', "/");
+            let relative_path = normalize_rel_key(relative.to_str()?);
             let filename = path_buf
                 .file_name()
                 .and_then(|n| n.to_str())
@@ -229,7 +216,7 @@ fn find_duplicates_sync(payload: FindDuplicatesPayload) -> Result<FindDuplicates
                 .unwrap_or(path);
             let rel_str = relative
                 .to_str()
-                .map(|s| s.replace('\\', "/"))
+                .map(normalize_rel_key)
                 .unwrap_or_default();
             
             if !rel_str.is_empty() {

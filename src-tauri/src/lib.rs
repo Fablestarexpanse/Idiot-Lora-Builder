@@ -13,7 +13,6 @@ pub fn run() {
             commands::project::load_image_dimensions,
             commands::images::ensure_thumbnail,
             commands::images::ensure_thumbnails_batch,
-            commands::images::get_thumbnail_cache_dir,
             commands::images::get_image_data_url,
             commands::images::crop_image,
             commands::images::multi_crop,

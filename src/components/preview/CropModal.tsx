@@ -134,7 +134,6 @@ export function CropModal() {
   const [highlight, setHighlight] = useState(true);
   const [saveAsNew, setSaveAsNew] = useState(true);
   const [outputSize, setOutputSize] = useState<number | null>(null);
-  const [guideType] = useState<"none" | "thirds" | "crosshair">("none");
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [cropMode, setCropMode] = useState<"manual" | "center" | "face">("manual");
 
@@ -765,25 +764,6 @@ export function CropModal() {
                     .join(" ") || undefined,
                 }}
               />
-              {/* Composition guides (full image overlay) */}
-              {imageSrc && imgWidth > 0 && imgHeight > 0 && guideType !== "none" && (
-                <div className="pointer-events-none absolute inset-0">
-                  {guideType === "thirds" && (
-                    <>
-                      <div className="absolute left-1/3 top-0 w-px h-full bg-white/40" style={{ marginLeft: -1 }} />
-                      <div className="absolute left-2/3 top-0 w-px h-full bg-white/40" style={{ marginLeft: -1 }} />
-                      <div className="absolute left-0 top-1/3 w-full h-px bg-white/40" style={{ marginTop: -1 }} />
-                      <div className="absolute left-0 top-2/3 w-full h-px bg-white/40" style={{ marginTop: -1 }} />
-                    </>
-                  )}
-                  {guideType === "crosshair" && (
-                    <>
-                      <div className="absolute left-1/2 top-0 w-px h-full bg-white/40" style={{ marginLeft: -1 }} />
-                      <div className="absolute left-0 top-1/2 w-full h-px bg-white/40" style={{ marginTop: -1 }} />
-                    </>
-                  )}
-                </div>
-              )}
               {highlight && imgWidth > 0 && imgHeight > 0 && (
                 <>
                   <div
@@ -888,7 +868,7 @@ export function CropModal() {
               type="button"
               onClick={handleNextUncropped}
               className="ml-2 rounded border border-blue-600 bg-blue-600/20 px-3 py-1.5 text-xs font-medium text-blue-200 hover:bg-blue-600/30"
-              title="Jump to next uncropped image (N)"
+              title="Jump to next uncropped image"
             >
               Next Uncropped
             </button>

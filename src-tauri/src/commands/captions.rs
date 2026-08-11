@@ -1,3 +1,6 @@
+//! Read/write comma-separated tag captions (.txt sidecars next to each image),
+//! including tag add/remove/reorder and batch operations.
+
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -5,10 +8,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+use super::common::is_image_path;
+
 /// Get the caption file path for an image (same name, .txt extension).
 fn caption_path_for(image_path: &str) -> PathBuf {
-    let path = PathBuf::from(image_path);
-    path.with_extension("txt")
+    super::common::caption_path_for(Path::new(image_path))
 }
 
 /// Case-insensitive tag comparison (Unicode-aware, consistent across commands).
@@ -146,18 +150,6 @@ pub fn reorder_tags(payload: ReorderTagsPayload) -> Result<(), String> {
     Ok(())
 }
 
-const IMAGE_EXT: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp"];
-
-fn is_image_path(p: &Path) -> bool {
-    let ext = p
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase());
-    ext.as_ref()
-        .map(|e| IMAGE_EXT.iter().any(|x| x.eq_ignore_ascii_case(e)))
-        .unwrap_or(false)
-}
-
 #[derive(Debug, Deserialize)]
 pub struct ClearAllCaptionsPayload {
     pub root_path: String,
@@ -190,7 +182,7 @@ pub fn clear_all_captions(payload: ClearAllCaptionsPayload) -> Result<ClearAllCa
         if !p.is_file() || !is_image_path(p) {
             continue;
         }
-        let caption_path = p.with_extension("txt");
+        let caption_path = super::common::caption_path_for(p);
         // Only clear caption files that already exist; don't create junk .txt files.
         if !caption_path.is_file() {
             continue;

@@ -2,8 +2,9 @@
 //! Listing models uses GET /api/tags (base URL without /v1).
 //! Generation reuses lm_studio commands with Ollama base URL and model.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
+use super::common::ConnectionStatus;
 use super::lm_studio::HTTP_CLIENT;
 
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434/v1";
@@ -16,13 +17,6 @@ pub struct TestOllamaConnectionPayload {
 
 fn default_ollama_base_url() -> String {
     DEFAULT_OLLAMA_BASE_URL.to_string()
-}
-
-#[derive(Debug, Serialize)]
-pub struct ConnectionStatus {
-    pub connected: bool,
-    pub models: Vec<String>,
-    pub error: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

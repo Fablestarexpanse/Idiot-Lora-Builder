@@ -6,7 +6,6 @@ interface SelectionState {
   selectedIds: Set<string>;
   setSelectedImage: (image: ImageEntry | null) => void;
   toggleSelection: (id: string) => void;
-  selectAll: (ids: string[]) => void;
   clearSelection: () => void;
 }
 
@@ -24,6 +23,5 @@ export const useSelectionStore = create<SelectionState>((set) => ({
       }
       return { selectedIds: newSet };
     }),
-  selectAll: (ids) => set({ selectedIds: new Set(ids) }),
   clearSelection: () => set({ selectedIds: new Set(), selectedImage: null }),
 }));

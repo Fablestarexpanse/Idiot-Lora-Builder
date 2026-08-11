@@ -1,10 +1,9 @@
-import { useRef } from "react";
-import { X, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAiStore } from "@/stores/aiStore";
 import { matchThumbnailPreset } from "@/lib/thumbnailPresets";
 import type { ThumbnailPresetId } from "@/lib/thumbnailPresets";
-import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { Modal } from "@/components/ui/Modal";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -12,9 +11,6 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const contentRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(contentRef, isOpen);
-
   const {
     triggerWord,
     setTriggerWord,
@@ -38,33 +34,29 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setOllamaModel,
   } = useAiStore();
 
-  if (!isOpen) return null;
-
   const activeThumbPreset = matchThumbnailPreset(gridMinCellScale, thumbnailSize);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div
-        ref={contentRef}
-        className="w-full max-w-lg rounded-lg border border-border bg-surface-elevated shadow-xl"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="flex items-center gap-2 text-lg font-medium text-gray-100">
-            <Settings className="h-5 w-5" />
-            Settings
-          </h2>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Settings"
+      icon={<Settings className="h-5 w-5" />}
+      maxWidthClassName="max-w-lg"
+      footer={
+        <div className="flex justify-end border-t border-border px-4 py-3">
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
           >
-            <X className="h-5 w-5" />
+            Done
           </button>
         </div>
-
-        {/* Content */}
-        <div className="max-h-[60vh] space-y-6 overflow-auto p-4">
+      }
+    >
+      {/* Content */}
+      <div className="max-h-[60vh] space-y-6 overflow-auto p-4">
           {/* General */}
           <section>
             <h3 className="mb-3 text-sm font-medium uppercase tracking-wide text-gray-400">
@@ -259,19 +251,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               A tool for preparing image datasets for AI model training.
             </p>
           </section>
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end border-t border-border px-4 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-          >
-            Done
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

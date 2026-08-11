@@ -1,6 +1,6 @@
 # LoRA Dataset Studio
 
-A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, etc.). Tag and caption images, use local AI (LM Studio or Ollama), and export to folder or ZIP.
+A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, etc.). Tag and caption images, rate and curate them, crop for training, use local AI (LM Studio or Ollama), and export to folder or ZIP.
 
 ![Version](https://img.shields.io/badge/version-0.4.1-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
@@ -9,20 +9,24 @@ A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, et
 
 ## Features
 
-- **Grid & ratings** — Open a folder, rate images (Good / Bad / Needs Edit), multi-select, sort by name/size/dimensions, search
-- **Tag editing** — Inline captions, right-panel editor, search/replace, trigger word, add-tag-to-all with preview
-- **AI captioning** — LM Studio or Ollama; vision models; single or batch; rating filter
-- **Preview** — Full-size view with zoom, prev/next, crop; ratings editable in preview
+- **Grid & ratings** — Open a folder, rate images (Good / Bad / Needs Edit), multi-select, virtualized grid for thousands of images
+- **Filtering & sorting** — Filter by rating, caption state, or search text; sort by name/size/dimensions
+- **Tag editing** — Inline captions, right-panel tag editor, search/replace, trigger word, add-tag-to-all with preview
+- **AI captioning** — LM Studio or Ollama; vision models; single or batch; rating filter; optional preview-before-save
+- **Preview & crop** — Full-size view with zoom, prev/next; crop tool with flip/rotate, square output sizes (e.g. 512/1024), save-as-new, and multi-crop (several regions from one image). Per-image crop status tracking.
+  - Note: the crop tool's "face detection" is currently a **placeholder** — it returns a centered region, not real detection. Real ONNX-based detection is planned.
+- **Batch rename** — Rename image + caption pairs with a pattern and sequential numbering
 - **Export** — Folder or ZIP; export all, selected, or by rating (good/bad/needs_edit subfolders); trigger word, sequential naming
-- **Tools** — Find duplicates, clear all tags (type "clear" to confirm), clear all ratings
+- **Tools** — Find duplicates (SHA-256 content hash), dataset stats, clear all tags (type "clear" to confirm), clear all ratings
+- Batch resize exists in the Rust backend (`batch_resize`: resize / center-crop / fit to a target size, copies captions) but has **no UI yet**.
 
 ## Performance
 
 **Optimized for large datasets (500+ images):**
 - Virtual scrolling for smooth rendering with thousands of images
-- Lazy-loaded thumbnails with intelligent caching
-- Optimistic UI updates for instant rating/caption changes (100x faster)
-- Parallel file processing in Rust backend (6x faster duplicate detection)
+- Disk-cached thumbnails served over the Tauri asset protocol (no base64 IPC)
+- Optimistic UI updates for instant rating/caption changes
+- Parallel file processing in Rust backend (rayon)
 - Memoized React components to minimize re-renders
 
 ## Tech
@@ -36,6 +40,8 @@ A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, et
 - [Node.js](https://nodejs.org/) 18+ and npm
 - [Rust](https://rustup.rs/) (stable)
 - [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS (e.g. WebView2 on Windows, Xcode CLI on macOS)
+
+The Tauri CLI is a dev dependency (`@tauri-apps/cli`), installed by `npm install` — no global install needed.
 
 ## Install & run
 
@@ -54,13 +60,22 @@ npm run tauri build
 
 Output: `src-tauri/target/release/bundle/` (installers for your platform).
 
+## Where your data lives
+
+Everything stays with your images — no database, no cloud:
+
+- **Captions** — one sidecar `.txt` per image, same base name, comma-separated tags (Kohya/OneTrainer compatible)
+- **Ratings** — `.lora-studio/ratings.json` inside the project folder (map of relative image path → rating)
+- **Crop status** — `.lora-studio/crop_status.json` inside the project folder
+- **Thumbnails** — JPEG cache in your OS temp dir (`lora-dataset-studio-thumbnails`); safe to delete, regenerated on demand
+
 ## AI captioning setup
 
 ### LM Studio
 
 1. **Download:** [LM Studio](https://lmstudio.ai/) — free, run LLMs locally.
 2. **Install** and open LM Studio.
-3. **Get a vision model:** Recommended: **mistralai/devstral-small-2-2512**. Search in LM Studio, download it (or another quantized vision model). You need a model that supports images.
+3. **Get a vision model:** you need a model that supports images (search LM Studio's model hub for a quantized vision model).
 4. **Load the model:** In Chat / Load Model, select the model and load it.
 5. **Start server:** Open the **Local Server** tab, select your model, click **Start Server**. Default URL: `http://localhost:1234`.
 6. **In the app:** AI tab → **LM Studio** → set URL (e.g. `http://localhost:1234`) → **Test** → pick model → **Generate Caption** or **Batch**.
@@ -77,7 +92,7 @@ Output: `src-tauri/target/release/bundle/` (installers for your platform).
 
 ### Tips
 
-- Use a **vision** model (e.g. **mistralai/devstral-small-2-2512**, LLaVA, Llama 3.2 Vision); text-only models won’t caption images.
+- Use a **vision** model (e.g. LLaVA, Llama 3.2 Vision); text-only models won't caption images.
 - **Settings → Preview AI caption before saving** lets you accept/reject before overwriting.
 - If captions time out: increase **Request timeout** in the AI panel, set **Max image size for AI** (e.g. 1024), or keep **Batch: concurrent requests** at 1.
 
@@ -113,12 +128,21 @@ image001.png
 image001.txt  →  "trigger_word, tag1, tag2, ..."
 ```
 
-## Project layout
+## Architecture
 
 ```
-src/           — React app (components, hooks, stores, lib)
-src-tauri/     — Rust backend (commands: captions, images, lm_studio, ollama, export, …)
+src/                    — React app
+  components/           — UI by feature (grid, editor, preview, ai, export, rename, filter, layout, …)
+  stores/               — Zustand stores (project, selection, filter, settings, ai, crop, history, ui, …)
+  hooks/                — useProject (react-query image list), shortcuts, focus trap
+  lib/                  — tauri.ts (all backend invoke wrappers), thumbnail sizing, filtering, prompt builder
+src-tauri/              — Rust backend
+  src/commands/         — one module per feature: project, images (thumbnails/crop/resize),
+                          captions, ratings, crop_status, export, batch_rename,
+                          lm_studio, ollama, detect (face-detection placeholder)
 ```
+
+The frontend never touches the filesystem directly — every operation goes through a Tauri command (`src/lib/tauri.ts` documents the full command list and payload conventions). Heavy work (image decode, hashing, zipping) runs in Rust on blocking threads; thumbnails are written to a disk cache and loaded by the webview through the asset protocol.
 
 ## License
 

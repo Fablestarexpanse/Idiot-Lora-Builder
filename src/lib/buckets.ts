@@ -89,36 +89,3 @@ export function computeBuckets(profile: TrainerProfile): BucketSize[] {
   return deduplicateByRatio(buckets);
 }
 
-export function getBucketAssignment(
-  w: number,
-  h: number,
-  profile: TrainerProfile
-): {
-  bucket: BucketSize;
-  cropLoss: number;
-  match: "exact" | "close" | "significant";
-} {
-  const buckets = computeBuckets(profile);
-  const targetRatio = w / h;
-  
-  let closest = buckets[0];
-  let minDiff = Math.abs(closest.ratio - targetRatio);
-  
-  for (const bucket of buckets) {
-    const diff = Math.abs(bucket.ratio - targetRatio);
-    if (diff < minDiff) {
-      minDiff = diff;
-      closest = bucket;
-    }
-  }
-  
-  const cropLoss = Math.abs(closest.width * closest.height - w * h) / (w * h);
-  const match =
-    closest.width === w && closest.height === h
-      ? "exact"
-      : cropLoss < 0.05
-        ? "close"
-        : "significant";
-  
-  return { bucket: closest, cropLoss, match };
-}

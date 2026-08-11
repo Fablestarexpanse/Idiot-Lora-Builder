@@ -1,3 +1,6 @@
+//! Image operations: thumbnail generation/caching, previews, crop/multi-crop,
+//! batch resize, and image deletion (with caption sidecar handling).
+
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use exif::{In, Reader, Tag};
 use image::codecs::jpeg::JpegEncoder;
@@ -16,6 +19,8 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use once_cell::sync::Lazy;
+
+use super::common::caption_path_for;
 
 const THUMB_SIZE: u32 = 256;
 /// Upper bound for requested edge length (HiDPI grid cells + crisp factor on the front end).
@@ -265,13 +270,6 @@ pub async fn ensure_thumbnails_batch(payload: EnsureThumbnailsBatchPayload) -> R
     .map_err(|e: tauri::Error| e.to_string())
 }
 
-/// Returns the thumbnail cache directory path (for asset protocol scope configuration).
-#[tauri::command]
-pub fn get_thumbnail_cache_dir() -> Result<String, String> {
-    let dir = thumbnail_cache_dir()?;
-    Ok(dir.to_string_lossy().into_owned())
-}
-
 // ============ Original commands preserved for backward compat ============
 
 #[derive(Debug, Deserialize)]
@@ -425,10 +423,10 @@ fn crop_image_sync(payload: CropImagePayload) -> Result<Option<String>, String> 
 
     // When saving as new, copy the source caption to the new image so LoRA workflow keeps tags
     if payload.save_as_new {
-        let caption_path = path.with_extension("txt");
+        let caption_path = caption_path_for(&path);
         if caption_path.exists() {
             if let Ok(content) = fs::read_to_string(&caption_path) {
-                let out_txt = out_path.with_extension("txt");
+                let out_txt = caption_path_for(&out_path);
                 let _ = fs::write(out_txt, content.trim());
             }
         }
@@ -543,7 +541,7 @@ fn batch_resize_sync(payload: BatchResizePayload) -> Result<BatchResizeResult, S
         }
 
         // Copy caption if exists
-        let caption_path = path.with_extension("txt");
+        let caption_path = caption_path_for(&path);
         if caption_path.exists() {
             if let Ok(content) = fs::read_to_string(&caption_path) {
                 let _ = fs::write(&out_txt, content.trim());
@@ -570,7 +568,7 @@ pub fn delete_image(image_path: String) -> Result<(), String> {
         return Err("Image file not found".to_string());
     }
     std::fs::remove_file(&path).map_err(|e| e.to_string())?;
-    let txt_path = path.with_extension("txt");
+    let txt_path = caption_path_for(&path);
     if txt_path.exists() && txt_path.is_file() {
         let _ = std::fs::remove_file(&txt_path);
     }
@@ -667,10 +665,10 @@ fn multi_crop_sync(payload: MultiCropPayload) -> Result<Vec<String>, String> {
             .map_err(|e| e.to_string())?;
 
         // Copy caption to new file with suffix
-        let caption_path = path.with_extension("txt");
+        let caption_path = caption_path_for(&path);
         if caption_path.exists() {
             if let Ok(content) = fs::read_to_string(&caption_path) {
-                let out_txt = out_path.with_extension("txt");
+                let out_txt = caption_path_for(&out_path);
                 let _ = fs::write(out_txt, content.trim());
             }
         }

@@ -1,5 +1,8 @@
+//! Tauri command modules, one per feature domain, plus shared helpers in `common`.
+
 pub mod batch_rename;
 pub mod captions;
+pub mod common;
 pub mod crop_status;
 pub mod detect;
 pub mod export;

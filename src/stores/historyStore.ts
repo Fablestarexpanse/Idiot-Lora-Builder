@@ -28,9 +28,6 @@ interface HistoryState {
   // Check if can undo/redo
   canUndo: () => boolean;
   canRedo: () => boolean;
-
-  // Clear history
-  clearHistory: () => void;
 }
 
 export const useHistoryStore = create<HistoryState>((set, get) => ({
@@ -87,6 +84,4 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
 
   canUndo: () => get().past.length > 0,
   canRedo: () => get().future.length > 0,
-
-  clearHistory: () => set({ past: [], future: [] }),
 }));

@@ -19,6 +19,7 @@ import {
   generateCaptionsBatch,
   writeCaption,
 } from "@/lib/tauri";
+import { Modal } from "@/components/ui/Modal";
 import { buildEffectivePrompt } from "@/lib/promptBuilder";
 import { buildBatchCaptionTargets } from "@/lib/batchCaptionTargets";
 import { DEFAULT_PROMPT_TEMPLATES } from "@/types";
@@ -727,56 +728,47 @@ export function AiPanel() {
       )}
 
       {/* Save Template Modal */}
-      {showSaveTemplate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="w-full max-w-md rounded-lg border border-border bg-surface-elevated shadow-xl">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h2 className="text-lg font-medium text-gray-100">Save Prompt Template</h2>
-              <button
-                type="button"
-                onClick={() => setShowSaveTemplate(false)}
-                className="rounded p-1 text-gray-400 hover:bg-white/10 hover:text-gray-200"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="space-y-4 p-4">
-              <div>
-                <label className="mb-1 block text-sm text-gray-300">Template Name</label>
-                <input
-                  type="text"
-                  value={templateName}
-                  onChange={(e) => setTemplateName(e.target.value)}
-                  placeholder="My Custom Prompt"
-                  autoFocus
-                  className="w-full rounded border border-border bg-surface px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSaveTemplate();
-                    if (e.key === "Escape") setShowSaveTemplate(false);
-                  }}
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
-              <button
-                type="button"
-                onClick={() => setShowSaveTemplate(false)}
-                className="rounded px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveTemplate}
-                disabled={!templateName.trim()}
-                className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-              >
-                Save
-              </button>
-            </div>
+      <Modal
+        isOpen={showSaveTemplate}
+        onClose={() => setShowSaveTemplate(false)}
+        title="Save Prompt Template"
+        maxWidthClassName="max-w-md"
+        footer={
+          <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
+            <button
+              type="button"
+              onClick={() => setShowSaveTemplate(false)}
+              className="rounded px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveTemplate}
+              disabled={!templateName.trim()}
+              className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4 p-4">
+          <div>
+            <label className="mb-1 block text-sm text-gray-300">Template Name</label>
+            <input
+              type="text"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              placeholder="My Custom Prompt"
+              className="w-full rounded border border-border bg-surface px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSaveTemplate();
+              }}
+            />
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

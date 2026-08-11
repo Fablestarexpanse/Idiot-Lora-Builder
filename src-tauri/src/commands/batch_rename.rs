@@ -6,15 +6,7 @@ use std::path::{Path, PathBuf};
 use std::collections::{HashMap, HashSet};
 use tauri::Emitter;
 
-fn caption_path_for(image_path: &Path) -> PathBuf {
-    image_path.with_extension("txt")
-}
-
-/// Normalize a relative path to forward slashes so metadata map keys compare
-/// consistently regardless of which separator the caller used.
-fn normalize_rel(path: &str) -> String {
-    path.replace('\\', "/")
-}
+use super::common::{caption_path_for, load_json_file, normalize_rel_key, save_json_file_atomic};
 
 #[derive(Debug, Deserialize)]
 pub struct BatchRenamePayload {
@@ -44,22 +36,15 @@ pub struct BatchRenameProgress {
 }
 
 fn load_json_map(path: &Path) -> Result<HashMap<String, String>, String> {
-    let content = match fs::read_to_string(path) {
-        Ok(content) => content,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(HashMap::new());
-        }
-        Err(e) => return Err(format!("Failed to read {}: {}", path.display(), e)),
-    };
-    let data: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
+    // Missing file -> Value::Null (the Default) -> empty map below.
+    let data: serde_json::Value = load_json_file(path)?;
     if let Some(obj) = data.as_object() {
         if let Some(map_val) = obj.get("ratings").or_else(|| obj.get("statuses")) {
             if let Some(map) = map_val.as_object() {
                 let mut result = HashMap::new();
                 for (k, v) in map {
                     if let Some(s) = v.as_str() {
-                        result.insert(normalize_rel(k), s.to_string());
+                        result.insert(normalize_rel_key(k), s.to_string());
                     }
                 }
                 return Ok(result);
@@ -70,9 +55,6 @@ fn load_json_map(path: &Path) -> Result<HashMap<String, String>, String> {
 }
 
 fn save_json_map(path: &Path, map: &HashMap<String, String>, key: &str) -> Result<(), String> {
-    let parent = path.parent().ok_or("No parent directory")?;
-    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-
     let mut obj = serde_json::Map::new();
     let mut inner = serde_json::Map::new();
     for (k, v) in map {
@@ -80,10 +62,7 @@ fn save_json_map(path: &Path, map: &HashMap<String, String>, key: &str) -> Resul
     }
     obj.insert(key.to_string(), serde_json::Value::Object(inner));
 
-    let content = serde_json::to_string_pretty(&obj).map_err(|e| e.to_string())?;
-    let tmp_path = path.with_extension("json.tmp");
-    fs::write(&tmp_path, content).map_err(|e| e.to_string())?;
-    fs::rename(&tmp_path, path).map_err(|e| e.to_string())
+    save_json_file_atomic(path, &serde_json::Value::Object(obj))
 }
 
 /// Renames image files and their caption files with prefix + zero-padded index.
@@ -159,7 +138,7 @@ fn batch_rename_sync(
             );
             let parent = old_path.parent().unwrap_or(&root);
             let new_path = parent.join(&new_name);
-            let caption_new = new_path.with_extension("txt");
+            let caption_new = caption_path_for(&new_path);
             preflight_index += 1;
 
             if !targets_seen.insert(new_path.clone()) {
@@ -256,7 +235,7 @@ fn batch_rename_sync(
         }
 
         let caption_old = caption_path_for(&old_path);
-        let caption_new = new_path.with_extension("txt");
+        let caption_new = caption_path_for(&new_path);
         let mut ok = true;
         if caption_old.exists() {
             if caption_new.exists() {
@@ -283,9 +262,9 @@ fn batch_rename_sync(
             renamed += 1;
             // Track the path mapping for metadata updates (normalized to '/')
             let new_relative = new_path.strip_prefix(&root)
-                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                .map(|p| normalize_rel_key(&p.to_string_lossy()))
                 .unwrap_or_else(|_| new_name.clone());
-            path_mappings.push((normalize_rel(relative_path), normalize_rel(&new_relative)));
+            path_mappings.push((normalize_rel_key(relative_path), normalize_rel_key(&new_relative)));
         }
         index += 1;
     }

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
-import { X, BarChart3 } from "lucide-react";
+import { BarChart3 } from "lucide-react";
 import { useProjectImages } from "@/hooks/useProject";
+import { Modal } from "@/components/ui/Modal";
 
 interface DatasetStatsModalProps {
   isOpen: boolean;
@@ -67,26 +68,26 @@ export function DatasetStatsModal({ isOpen, onClose }: DatasetStatsModalProps) {
     };
   }, [images]);
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-lg border border-border bg-surface-elevated shadow-xl">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="flex items-center gap-2 text-lg font-medium text-gray-100">
-            <BarChart3 className="h-5 w-5" />
-            Dataset Statistics
-          </h2>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Dataset Statistics"
+      icon={<BarChart3 className="h-5 w-5" />}
+      maxWidthClassName="flex max-h-[80vh] max-w-lg flex-col"
+      footer={
+        <div className="flex justify-end border-t border-border px-4 py-3">
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+            className="rounded px-4 py-2 text-sm text-gray-400 hover:bg-white/10 hover:text-gray-200"
           >
-            <X className="h-5 w-5" />
+            Close
           </button>
         </div>
-
-        <div className="space-y-4 overflow-auto p-4">
+      }
+    >
+      <div className="space-y-4 overflow-auto p-4">
           <div>
             <h3 className="mb-2 text-xs font-medium uppercase text-gray-500">
               Overview
@@ -167,18 +168,7 @@ export function DatasetStatsModal({ isOpen, onClose }: DatasetStatsModalProps) {
               </p>
             )}
           </div>
-        </div>
-
-        <div className="flex justify-end border-t border-border px-4 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded px-4 py-2 text-sm text-gray-400 hover:bg-white/10 hover:text-gray-200"
-          >
-            Close
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

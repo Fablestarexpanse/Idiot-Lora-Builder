@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Folder, Replace, RotateCcw, Loader2, HelpCircle, Tag, Lock, Unlock, Copy, BarChart3 } from "lucide-react";
 import { useProjectStore } from "@/stores/projectStore";
@@ -8,7 +8,6 @@ import { useSearchReplaceStore } from "@/stores/searchReplaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 import { writeCaption } from "@/lib/tauri";
-import { useMemo } from "react";
 import { FindDuplicatesModal } from "../project/FindDuplicatesModal";
 import { DatasetStatsModal } from "../project/DatasetStatsModal";
 

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, memo, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Smile, Frown, Wrench, Loader2, Maximize2, Crop, Trash2, X, Eraser, Check, Sparkles } from "lucide-react";
+import { Smile, Frown, Wrench, Loader2, Maximize2, Crop, Trash2, Eraser, Check, Sparkles } from "lucide-react";
 import {
   ensureThumbnailUrl,
   writeCaption,
@@ -17,7 +17,7 @@ import { useSearchReplaceStore } from "@/stores/searchReplaceStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
-import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { highlightTerm } from "@/lib/highlight";
 import type { ImageEntry, ImageRating } from "@/types";
 
@@ -134,10 +134,6 @@ export const ThumbnailCell = memo(function ThumbnailCell({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showClearTagsConfirm, setShowClearTagsConfirm] = useState(false);
   const captionInputRef = useRef<HTMLTextAreaElement>(null);
-  const deleteModalRef = useRef<HTMLDivElement>(null);
-  const clearModalRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(deleteModalRef, showDeleteConfirm);
-  useFocusTrap(clearModalRef, showClearTagsConfirm);
   const searchHighlightText = useSearchReplaceStore((s) => s.searchHighlightText);
   const addTagPreviewText = useSearchReplaceStore((s) => s.addTagPreviewText);
   const addTagPreviewAtFront = useSearchReplaceStore((s) => s.addTagPreviewAtFront);
@@ -553,7 +549,7 @@ export const ThumbnailCell = memo(function ThumbnailCell({
           }}
           disabled={generateCaptionMutation.isPending}
           className="rounded p-0.5 text-gray-500 hover:bg-purple-600/20 hover:text-purple-400 disabled:opacity-30"
-          title="Generate prompt for this image"
+          title="Generate tags for this image"
         >
           {generateCaptionMutation.isPending ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -583,135 +579,47 @@ export const ThumbnailCell = memo(function ThumbnailCell({
           onClick={handleClearTagsClick}
           disabled={writeMutation.isPending}
           className="rounded p-0.5 text-gray-500 hover:bg-amber-600/20 hover:text-amber-400 disabled:opacity-30"
-          title="Clear all prompts for this image"
+          title="Clear all tags for this image"
         >
           <Eraser className="h-3.5 w-3.5" />
         </button>
       </div>
 
       {/* Delete confirmation modal — matches app style */}
-      {showDeleteConfirm && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
-          role="dialog"
-          aria-labelledby="delete-confirm-title"
-          aria-modal="true"
-        >
-          <div
-            ref={deleteModalRef}
-            className="w-full max-w-sm rounded-lg border border-border bg-surface-elevated shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h2
-                id="delete-confirm-title"
-                className="flex items-center gap-2 text-lg font-medium text-gray-100"
-              >
-                <Trash2 className="h-5 w-5 text-red-400" />
-                Delete image?
-              </h2>
-              <button
-                type="button"
-                onClick={handleDeleteCancel}
-                aria-label="Close"
-                className="rounded p-1 text-gray-400 hover:bg-white/10 hover:text-gray-200"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="space-y-4 p-4">
-              <p className="text-sm text-gray-400">
-                Are you sure you want to delete this image from the folder? The
-                file and its caption will be removed. This cannot be undone.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={handleDeleteCancel}
-                  className="flex flex-1 items-center justify-center rounded border border-border bg-surface px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-600 hover:text-gray-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDeleteConfirm}
-                  disabled={deleteMutation.isPending}
-                  className="flex flex-1 items-center justify-center gap-2 rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
-                >
-                  {deleteMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        onCancel={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        title="Delete image?"
+        icon={<Trash2 className="h-5 w-5 text-red-400" />}
+        confirmLabel="Delete"
+        confirmIcon={<Trash2 className="h-4 w-4" />}
+        confirmButtonClassName="bg-red-600 hover:bg-red-500"
+        isPending={deleteMutation.isPending}
+      >
+        <p className="text-sm text-gray-400">
+          Are you sure you want to delete this image from the folder? The
+          file and its caption will be removed. This cannot be undone.
+        </p>
+      </ConfirmModal>
 
       {/* Clear tags confirmation modal */}
-      {showClearTagsConfirm && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
-          role="dialog"
-          aria-labelledby="clear-tags-confirm-title"
-          aria-modal="true"
-        >
-          <div
-            ref={clearModalRef}
-            className="w-full max-w-sm rounded-lg border border-border bg-surface-elevated shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h2
-                id="clear-tags-confirm-title"
-                className="flex items-center gap-2 text-lg font-medium text-gray-100"
-              >
-                <Eraser className="h-5 w-5 text-amber-400" />
-                Clear all prompts?
-              </h2>
-              <button
-                type="button"
-                onClick={handleClearTagsCancel}
-                aria-label="Close"
-                className="rounded p-1 text-gray-400 hover:bg-white/10 hover:text-gray-200"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="space-y-4 p-4">
-              <p className="text-sm text-gray-400">
-                Remove all tags from this image. The caption file will be
-                cleared. You can add new tags afterward.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={handleClearTagsCancel}
-                  className="flex flex-1 items-center justify-center rounded border border-border bg-surface px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-600 hover:text-gray-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleClearTagsConfirm}
-                  disabled={writeMutation.isPending}
-                  className="flex flex-1 items-center justify-center gap-2 rounded bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-50"
-                >
-                  {writeMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Eraser className="h-4 w-4" />
-                  )}
-                  Clear tags
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmModal
+        isOpen={showClearTagsConfirm}
+        onCancel={handleClearTagsCancel}
+        onConfirm={handleClearTagsConfirm}
+        title="Clear all tags?"
+        icon={<Eraser className="h-5 w-5 text-amber-400" />}
+        confirmLabel="Clear tags"
+        confirmIcon={<Eraser className="h-4 w-4" />}
+        confirmButtonClassName="bg-amber-600 hover:bg-amber-500"
+        isPending={writeMutation.isPending}
+      >
+        <p className="text-sm text-gray-400">
+          Remove all tags from this image. The caption file will be
+          cleared. You can add new tags afterward.
+        </p>
+      </ConfirmModal>
 
       {/* Filename, dimensions, file size */}
       <div className="px-1 py-0.5">

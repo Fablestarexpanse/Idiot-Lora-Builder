@@ -1,7 +1,7 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { X, Download, FolderOpen, Archive, Loader2, Check } from "lucide-react";
+import { Download, FolderOpen, Archive, Loader2, Check } from "lucide-react";
+import { Modal } from "@/components/ui/Modal";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -23,9 +23,6 @@ interface ExportModalProps {
 }
 
 export function ExportModal({ isOpen, onClose }: ExportModalProps) {
-  const contentRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(contentRef, isOpen);
-
   const rootPath = useProjectStore((s) => s.rootPath);
   const { data: images = [] } = useProjectImages();
   const selectedIds = useSelectionStore((s) => s.selectedIds);
@@ -141,30 +138,39 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
     onClose();
   }
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div
-        ref={contentRef}
-        className="flex max-h-[90vh] w-full max-w-md flex-col rounded-lg border border-border bg-surface-elevated shadow-xl"
-      >
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="flex items-center gap-2 text-lg font-medium text-gray-100">
-            <Download className="h-5 w-5" />
-            Export Dataset
-          </h2>
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title="Export Dataset"
+      icon={<Download className="h-5 w-5" />}
+      maxWidthClassName="flex max-h-[90vh] max-w-md flex-col"
+      footer={
+        <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-3">
           <button
             type="button"
             onClick={handleClose}
-            aria-label="Close"
-            className="rounded p-1 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+            className="rounded px-4 py-2 text-sm text-gray-400 hover:bg-white/10 hover:text-gray-200"
           >
-            <X className="h-5 w-5" />
+            {result?.success ? "Done" : "Cancel"}
+          </button>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={!destPath || exportMutation.isPending || count === 0}
+            className="flex items-center gap-2 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          >
+            {exportMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {result?.success ? "Export again" : "Export"}
           </button>
         </div>
-
-        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+      }
+    >
+      <div className="flex-1 space-y-4 overflow-y-auto p-4">
           <p className="text-sm text-gray-400">
             Exporting <strong className="text-gray-200">{count}</strong> image
             {count === 1 ? "" : "s"}.
@@ -374,31 +380,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
               )}
             </div>
           )}
-        </div>
-
-        <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-3">
-          <button
-            type="button"
-            onClick={handleClose}
-            className="rounded px-4 py-2 text-sm text-gray-400 hover:bg-white/10 hover:text-gray-200"
-          >
-            {result?.success ? "Done" : "Cancel"}
-          </button>
-          <button
-            type="button"
-            onClick={handleExport}
-            disabled={!destPath || exportMutation.isPending || count === 0}
-            className="flex items-center gap-2 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-          >
-            {exportMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            {result?.success ? "Export again" : "Export"}
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

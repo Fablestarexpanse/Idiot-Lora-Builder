@@ -35,21 +35,6 @@ export interface CaptionData {
   tags: string[];
 }
 
-/** Project settings and root. */
-export interface Project {
-  id: string;
-  name: string;
-  rootPath: string;
-  settings: ProjectSettings;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ProjectSettings {
-  captionFormat: "comma" | "kohya";
-  triggerWord: string;
-}
-
 /** Sort field for image grid. */
 export type SortBy = "name" | "file_size" | "extension" | "dimension";
 /** Sort order. */

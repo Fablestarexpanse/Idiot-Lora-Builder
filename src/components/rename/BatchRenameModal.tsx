@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { X, FileEdit, Loader2, AlertCircle } from "lucide-react";
+import { FileEdit, Loader2, AlertCircle } from "lucide-react";
+import { Modal } from "@/components/ui/Modal";
 import { useProjectStore } from "@/stores/projectStore";
 import { useProjectImages } from "@/hooks/useProject";
 import { useSelectionStore } from "@/stores/selectionStore";
@@ -167,26 +168,39 @@ export function BatchRenameModal({ isOpen, onClose }: BatchRenameModalProps) {
     );
   }
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="w-full max-w-md rounded-lg border border-border bg-surface-elevated shadow-xl">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="flex items-center gap-2 text-lg font-medium text-gray-100">
-            <FileEdit className="h-5 w-5" />
-            Batch Rename
-          </h2>
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title="Batch Rename"
+      icon={<FileEdit className="h-5 w-5" />}
+      maxWidthClassName="max-w-md"
+      footer={
+        <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
           <button
             type="button"
             onClick={handleClose}
-            className="rounded p-1 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+            className="rounded px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10"
           >
-            <X className="h-5 w-5" />
+            Close
+          </button>
+          <button
+            type="button"
+            onClick={handleRename}
+            disabled={count === 0 || renameMutation.isPending}
+            className="flex items-center gap-2 rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+          >
+            {renameMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileEdit className="h-4 w-4" />
+            )}
+            Rename
           </button>
         </div>
-
-        <div className="space-y-4 p-4">
+      }
+    >
+      <div className="space-y-4 p-4">
           <p className="text-sm text-gray-400">
             {selectedIds.size > 0
               ? `${selectedIds.size} selected image(s) will be renamed.`
@@ -269,31 +283,7 @@ export function BatchRenameModal({ isOpen, onClose }: BatchRenameModalProps) {
               )}
             </div>
           )}
-        </div>
-
-        <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
-          <button
-            type="button"
-            onClick={handleClose}
-            className="rounded px-3 py-1.5 text-sm text-gray-300 hover:bg-white/10"
-          >
-            Close
-          </button>
-          <button
-            type="button"
-            onClick={handleRename}
-            disabled={count === 0 || renameMutation.isPending}
-            className="flex items-center gap-2 rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
-          >
-            {renameMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <FileEdit className="h-4 w-4" />
-            )}
-            Rename
-          </button>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

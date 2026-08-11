@@ -1,3 +1,6 @@
+//! LM Studio provider: OpenAI-compatible vision captioning at http://localhost:1234.
+//! Owns the shared HTTP client and single/batch caption generation commands.
+
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use futures::stream::{self, StreamExt};
 use image::imageops::FilterType;
@@ -7,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::Cursor;
 use std::path::PathBuf;
+
+use super::common::ConnectionStatus;
 
 const DEFAULT_BASE_URL: &str = "http://localhost:1234";
 
@@ -44,13 +49,6 @@ fn default_base_url() -> String {
 pub struct TestConnectionPayload {
     #[serde(default = "default_base_url")]
     pub base_url: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ConnectionStatus {
-    pub connected: bool,
-    pub models: Vec<String>,
-    pub error: Option<String>,
 }
 
 /// Test connection to LM Studio and list available models.

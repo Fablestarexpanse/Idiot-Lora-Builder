@@ -1,9 +1,13 @@
+//! Per-project image ratings (good / bad / needs_edit) stored in a
+//! `.lora-studio/ratings.json` sidecar file.
+
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+
+use super::common::{backup_file_best_effort, load_json_file, save_json_file_atomic};
 
 /// Serializes all load-modify-save sections on the ratings file so rapid
 /// concurrent commands cannot drop each other's updates.
@@ -56,16 +60,7 @@ fn ratings_file_path(root: &str) -> PathBuf {
 /// that exists but cannot be read or parsed is an error (so a corrupt file
 /// is never silently replaced by an empty one on the next save).
 pub fn try_load_ratings(root: &str) -> Result<RatingsData, String> {
-    let path = ratings_file_path(root);
-    let content = match fs::read_to_string(&path) {
-        Ok(content) => content,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(RatingsData::default());
-        }
-        Err(e) => return Err(format!("Failed to read {}: {}", path.display(), e)),
-    };
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
+    load_json_file(&ratings_file_path(root))
 }
 
 /// Infallible loader kept for read-only callers outside this module
@@ -77,15 +72,7 @@ pub fn load_ratings(root: &str) -> RatingsData {
 
 /// Save ratings to file (write to a temp file, then rename over the target).
 fn save_ratings(root: &str, data: &RatingsData) -> Result<(), String> {
-    let path = ratings_file_path(root);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let content = serde_json::to_string_pretty(data).map_err(|e| e.to_string())?;
-    let tmp_path = path.with_extension("json.tmp");
-    fs::write(&tmp_path, content).map_err(|e| e.to_string())?;
-    fs::rename(&tmp_path, &path).map_err(|e| e.to_string())?;
-    Ok(())
+    save_json_file_atomic(&ratings_file_path(root), data)
 }
 
 /// Get rating for a specific image.
@@ -146,8 +133,7 @@ pub fn clear_all_ratings(payload: GetRatingsPayload) -> Result<usize, String> {
     let data = try_load_ratings(&payload.root_path)?;
     let count = data.ratings.len();
     // Best-effort backup of the existing file before overwriting it.
-    let backup_path = path.with_file_name("ratings.bak.json");
-    let _ = fs::copy(&path, &backup_path);
+    backup_file_best_effort(&path, "ratings.bak.json");
     let empty = RatingsData::default();
     save_ratings(&payload.root_path, &empty)?;
     Ok(count)
