@@ -7,11 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Send to Fizgig** toolbar button: launches your local
+- **Send to Fizgig** toolbar button: exports only your **Good-rated** images
+  (with captions) to a dedicated `<project>_fizgig` staging folder — cleared on
+  each send so demoted images never linger — then launches your local
   [Fizgig](https://github.com/shootthesound/Fizgig) install (LoRA training
-  workbench) and copies the current dataset's folder path to the clipboard to
-  paste into Fizgig's Start tab. Configure the Fizgig folder under Settings →
-  Integrations.
+  workbench) with the staging path copied to the clipboard for Fizgig's Start
+  tab. Configure the Fizgig folder under Settings → Integrations.
 
 ## [0.6.0] - 2026-08-11
 

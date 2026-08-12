@@ -4,7 +4,8 @@ import { useProjectStore } from "@/stores/projectStore";
 import { useUiStore } from "@/stores/uiStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { openFolder, launchFizgig } from "@/lib/tauri";
+import { useProjectImages } from "@/hooks/useProject";
+import { openFolder, launchFizgig, clearStagingImages, exportDataset } from "@/lib/tauri";
 import { ExportModal } from "../export/ExportModal";
 import { BatchRenameModal } from "../rename/BatchRenameModal";
 import { SettingsModal } from "../settings/SettingsModal";
@@ -20,6 +21,8 @@ export function Toolbar() {
   const showToast = useUiStore((s) => s.showToast);
   const selectedImage = useSelectionStore((s) => s.selectedImage);
   const fizgigPath = useSettingsStore((s) => s.fizgigPath);
+  const { data: allImages = [] } = useProjectImages();
+  const [isSendingToFizgig, setIsSendingToFizgig] = useState(false);
 
   const ratingBorderClass =
     selectedImage?.rating === "good"
@@ -43,20 +46,49 @@ export function Toolbar() {
       setShowSettings(true);
       return;
     }
+    if (!rootPath) return;
+
+    // Only send curated images: rated Good. Bad / needs-edit / unrated stay home.
+    const goodImages = allImages.filter((img) => img.rating === "good");
+    if (goodImages.length === 0) {
+      showToast("No images rated Good yet — rate your keepers first, then send");
+      return;
+    }
+
+    setIsSendingToFizgig(true);
     try {
+      // Dedicated staging folder next to the project; cleared each send so
+      // images demoted since the last export never linger in the training set.
+      const stagingDir = rootPath.replace(/[\\/]+$/, "") + "_fizgig";
+      await clearStagingImages(stagingDir);
+      const result = await exportDataset({
+        source_path: rootPath,
+        dest_path: stagingDir,
+        as_zip: false,
+        only_captioned: false,
+        relative_paths: goodImages.map((img) => img.relative_path),
+        trigger_word: null, // captions already carry the trigger word
+        sequential_naming: false,
+      });
+      if (!result.success && result.error) {
+        showToast(`Export problem: ${result.error}`);
+        return;
+      }
       await launchFizgig(fizgigPath.trim());
-      if (rootPath) {
-        try {
-          await navigator.clipboard.writeText(rootPath);
-          showToast("Fizgig launching — dataset path copied, paste it in Fizgig's Start tab");
-        } catch {
-          showToast(`Fizgig launching — dataset folder: ${rootPath}`);
-        }
-      } else {
-        showToast("Fizgig launching");
+      try {
+        await navigator.clipboard.writeText(stagingDir);
+        showToast(
+          `Sent ${result.exported_count} Good image${result.exported_count === 1 ? "" : "s"} — path copied, paste it in Fizgig's Start tab`
+        );
+      } catch {
+        showToast(
+          `Sent ${result.exported_count} Good image${result.exported_count === 1 ? "" : "s"} to ${stagingDir} — Fizgig launching`
+        );
       }
     } catch (err) {
       showToast(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSendingToFizgig(false);
     }
   }
 
@@ -147,14 +179,14 @@ export function Toolbar() {
           aria-label="Send dataset to Fizgig"
           title={
             fizgigPath.trim()
-              ? "Launch Fizgig and copy this dataset's folder path"
+              ? "Export Good-rated images to a staging folder and launch Fizgig"
               : "Launch Fizgig (set its folder in Settings first)"
           }
           onClick={handleSendToFizgig}
-          disabled={!rootPath}
+          disabled={!rootPath || isSendingToFizgig}
         >
-          <Rocket className="h-4 w-4" />
-          Send to Fizgig
+          <Rocket className={`h-4 w-4 ${isSendingToFizgig ? "animate-pulse" : ""}`} />
+          {isSendingToFizgig ? "Sending…" : "Send to Fizgig"}
         </button>
 
         <span className="text-xs text-gray-500">|</span>

@@ -433,6 +433,17 @@ export async function launchFizgig(fizgigPath: string): Promise<void> {
   });
 }
 
+/**
+ * Clears image + caption files from the top level of a dedicated staging folder
+ * (used before re-exporting to Fizgig so stale images never linger). Returns
+ * the number of files removed.
+ */
+export async function clearStagingImages(folder: string): Promise<number> {
+  return invoke<number>("clear_staging_images", {
+    payload: { folder },
+  });
+}
+
 // ============ Face Detection ============
 
 export async function detectFaces(imagePath: string): Promise<FaceRegion[]> {

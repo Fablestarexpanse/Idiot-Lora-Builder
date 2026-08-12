@@ -2,8 +2,46 @@
 //! local Fizgig install so they can train on a dataset prepared here.
 
 use serde::Deserialize;
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+
+use super::common::is_image_path;
+
+#[derive(Debug, Deserialize)]
+pub struct ClearStagingImagesPayload {
+    /// The dedicated export/staging folder to clean (top level only).
+    pub folder: String,
+}
+
+/// Removes image files and .txt caption sidecars from the top level of a
+/// dedicated staging folder, so a re-export never leaves stale images from
+/// previously included entries. Non-image/non-txt files and subfolders are
+/// left untouched. The folder not existing is fine (fresh export creates it).
+#[tauri::command]
+pub fn clear_staging_images(payload: ClearStagingImagesPayload) -> Result<usize, String> {
+    let dir = PathBuf::from(&payload.folder);
+    if !dir.is_dir() {
+        return Ok(0);
+    }
+    let mut removed = 0usize;
+    let entries = fs::read_dir(&dir).map_err(|e| e.to_string())?;
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let is_txt = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("txt"));
+        if is_image_path(&path) || is_txt {
+            fs::remove_file(&path).map_err(|e| e.to_string())?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
 
 #[derive(Debug, Deserialize)]
 pub struct LaunchFizgigPayload {
