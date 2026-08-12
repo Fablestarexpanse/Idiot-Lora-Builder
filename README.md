@@ -16,6 +16,7 @@ A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, et
 - **Preview & crop** — Full-size view with zoom, prev/next; crop tool with flip/rotate, square output sizes (e.g. 512/1024), save-as-new, and multi-crop (several regions from one image). Per-image crop status tracking. Face detection (YuNet ONNX, downloaded on first use) auto-centers crops on faces.
 - **Batch rename** — Rename image + caption pairs with a pattern and sequential numbering
 - **Export** — Folder or ZIP; export all, selected, or by rating (good/bad/needs_edit subfolders); trigger word, sequential naming
+- **Send to Fizgig** — One-click handoff to a local [Fizgig](https://github.com/shootthesound/Fizgig) install (LoRA training workbench): exports only your Good-rated images + captions to a `<project>_fizgig` staging folder (cleared on each send so demoted images never linger), launches Fizgig, and copies the staging path to your clipboard for its Start tab. Set the Fizgig folder under Settings → Integrations.
 - **Tools** — Find duplicates (SHA-256 content hash), dataset stats, clear all tags (type "clear" to confirm), clear all ratings
 - Batch resize exists in the Rust backend (`batch_resize`: resize / center-crop / fit to a target size, copies captions) but has **no UI yet**.
 
@@ -100,8 +101,9 @@ Everything stays with your images — no database, no cloud:
 1. **Open** a folder of images.
 2. **Edit tags** — click caption under an image or use the right panel.
 3. **Rate** — Good / Bad / Needs Edit (or 1 / 2 / 3 when focused).
-4. **AI** — Choose LM Studio or Ollama, Test, then Generate Caption (single) or Batch.
+4. **AI** — Choose Built-in (local), LM Studio, or Ollama in the AI panel, then Generate Caption (single) or Batch. The built-in captioner offers a one-time model download (Qwen3-VL 8B or 4B) and runs fully offline.
 5. **Export** — Export → choose what to export (all, selected, by rating, etc.) → pick destination.
+6. **Train** — Send to Fizgig exports your Good-rated images to a staging folder and launches Fizgig with the path on your clipboard (set its folder in Settings → Integrations first).
 
 ### Shortcuts
 
