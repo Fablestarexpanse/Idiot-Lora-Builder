@@ -3,6 +3,16 @@
 All notable changes to LoRA Dataset Studio are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Send to Fizgig** toolbar button: launches your local
+  [Fizgig](https://github.com/shootthesound/Fizgig) install (LoRA training
+  workbench) and copies the current dataset's folder path to the clipboard to
+  paste into Fizgig's Start tab. Configure the Fizgig folder under Settings →
+  Integrations.
+
 ## [0.6.0] - 2026-08-11
 
 ### Added

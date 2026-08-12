@@ -424,6 +424,15 @@ export async function batchRename(
   });
 }
 
+// ============ Fizgig Handoff ============
+
+/** Launches the user's local Fizgig install (LoRA trainer) via its run_fizgig.bat. */
+export async function launchFizgig(fizgigPath: string): Promise<void> {
+  return invoke<void>("launch_fizgig", {
+    payload: { fizgig_path: fizgigPath },
+  });
+}
+
 // ============ Face Detection ============
 
 export async function detectFaces(imagePath: string): Promise<FaceRegion[]> {

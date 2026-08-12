@@ -16,6 +16,8 @@ interface SettingsState {
   confirmBeforeClearTags: boolean;
   /** Performance / layout overlay (bottom-left) */
   showGridDebug: boolean;
+  /** Root folder of a local Fizgig install (LoRA trainer) for the handoff button. */
+  fizgigPath: string;
   setTriggerWord: (word: string) => void;
   setPreviousTriggerWord: (word: string) => void;
   setTriggerWordLocked: (locked: boolean) => void;
@@ -24,6 +26,7 @@ interface SettingsState {
   setThumbnailPreset: (preset: ThumbnailPresetId) => void;
   setConfirmBeforeClearTags: (value: boolean) => void;
   setShowGridDebug: (value: boolean) => void;
+  setFizgigPath: (path: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -36,6 +39,7 @@ export const useSettingsStore = create<SettingsState>()(
       gridMinCellScale: 1,
       confirmBeforeClearTags: true,
       showGridDebug: false,
+      fizgigPath: "",
       setTriggerWord: (triggerWord) => set({ triggerWord }),
       setPreviousTriggerWord: (previousTriggerWord) => set({ previousTriggerWord }),
       setTriggerWordLocked: (triggerWordLocked) => set({ triggerWordLocked }),
@@ -47,6 +51,7 @@ export const useSettingsStore = create<SettingsState>()(
       },
       setConfirmBeforeClearTags: (confirmBeforeClearTags) => set({ confirmBeforeClearTags }),
       setShowGridDebug: (showGridDebug) => set({ showGridDebug }),
+      setFizgigPath: (fizgigPath) => set({ fizgigPath }),
     }),
     {
       name: "lora-studio-settings",

@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { FolderOpen, Download, FileEdit, Settings, HelpCircle, Eraser, StarOff } from "lucide-react";
+import { FolderOpen, Download, FileEdit, Settings, HelpCircle, Eraser, StarOff, Rocket } from "lucide-react";
 import { useProjectStore } from "@/stores/projectStore";
 import { useUiStore } from "@/stores/uiStore";
 import { useSelectionStore } from "@/stores/selectionStore";
-import { openFolder } from "@/lib/tauri";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { openFolder, launchFizgig } from "@/lib/tauri";
 import { ExportModal } from "../export/ExportModal";
 import { BatchRenameModal } from "../rename/BatchRenameModal";
 import { SettingsModal } from "../settings/SettingsModal";
@@ -18,6 +19,7 @@ export function Toolbar() {
   const setLastOpenedFolder = useProjectStore((s) => s.setLastOpenedFolder);
   const showToast = useUiStore((s) => s.showToast);
   const selectedImage = useSelectionStore((s) => s.selectedImage);
+  const fizgigPath = useSettingsStore((s) => s.fizgigPath);
 
   const ratingBorderClass =
     selectedImage?.rating === "good"
@@ -34,6 +36,29 @@ export function Toolbar() {
   const [showClearAllRatings, setShowClearAllRatings] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+
+  async function handleSendToFizgig() {
+    if (!fizgigPath.trim()) {
+      showToast("Set your Fizgig folder in Settings first (Integrations section)");
+      setShowSettings(true);
+      return;
+    }
+    try {
+      await launchFizgig(fizgigPath.trim());
+      if (rootPath) {
+        try {
+          await navigator.clipboard.writeText(rootPath);
+          showToast("Fizgig launching — dataset path copied, paste it in Fizgig's Start tab");
+        } catch {
+          showToast(`Fizgig launching — dataset folder: ${rootPath}`);
+        }
+      } else {
+        showToast("Fizgig launching");
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   async function handleOpen() {
     try {
@@ -113,6 +138,23 @@ export function Toolbar() {
         >
           <StarOff className="h-4 w-4" />
           Clear All Ratings
+        </button>
+
+        {/* Send to Fizgig (external LoRA trainer) */}
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium text-gray-200 hover:bg-purple-600/20 hover:text-purple-300 disabled:opacity-50"
+          aria-label="Send dataset to Fizgig"
+          title={
+            fizgigPath.trim()
+              ? "Launch Fizgig and copy this dataset's folder path"
+              : "Launch Fizgig (set its folder in Settings first)"
+          }
+          onClick={handleSendToFizgig}
+          disabled={!rootPath}
+        >
+          <Rocket className="h-4 w-4" />
+          Send to Fizgig
         </button>
 
         <span className="text-xs text-gray-500">|</span>

@@ -6,6 +6,7 @@ pub mod common;
 pub mod crop_status;
 pub mod detect;
 pub mod export;
+pub mod fizgig;
 pub mod images;
 pub mod llama_server;
 pub mod lm_studio;

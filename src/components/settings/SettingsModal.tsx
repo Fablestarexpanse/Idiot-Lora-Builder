@@ -1,9 +1,10 @@
-import { Settings } from "lucide-react";
+import { Settings, FolderOpen } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAiStore } from "@/stores/aiStore";
 import { matchThumbnailPreset } from "@/lib/thumbnailPresets";
 import type { ThumbnailPresetId } from "@/lib/thumbnailPresets";
 import { Modal } from "@/components/ui/Modal";
+import { openFolder } from "@/lib/tauri";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -23,6 +24,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setConfirmBeforeClearTags,
     showGridDebug,
     setShowGridDebug,
+    fizgigPath,
+    setFizgigPath,
   } = useSettingsStore();
 
   const {
@@ -236,6 +239,43 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   className="w-full rounded border border-border bg-surface px-3 py-2 text-sm text-gray-200 placeholder-gray-500"
                 />
               </div>
+            </div>
+          </section>
+
+          {/* Integrations */}
+          <section>
+            <h3 className="mb-3 text-sm font-medium uppercase tracking-wide text-gray-400">
+              Integrations
+            </h3>
+            <div>
+              <label className="mb-1 block text-sm text-gray-300">
+                Fizgig folder (LoRA trainer)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={fizgigPath}
+                  onChange={(e) => setFizgigPath(e.target.value)}
+                  placeholder="e.g. F:\Fizgig-master"
+                  className="w-full rounded border border-border bg-surface px-3 py-2 text-sm text-gray-200 placeholder-gray-500"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const folder = await openFolder();
+                    if (folder) setFizgigPath(folder);
+                  }}
+                  className="flex items-center gap-1 rounded border border-border bg-surface px-3 py-2 text-sm text-gray-300 hover:bg-gray-600 hover:text-gray-200"
+                  title="Browse for the Fizgig folder"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  Browse
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                Path to your local Fizgig install (the folder containing run_fizgig.bat).
+                Enables the &quot;Send to Fizgig&quot; button in the toolbar.
+              </p>
             </div>
           </section>
 

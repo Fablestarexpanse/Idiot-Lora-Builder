@@ -48,6 +48,7 @@ pub fn run() {
             commands::llama_server::stop_builtin_server,
             commands::llama_server::get_builtin_server_status,
             commands::llama_server::ensure_face_model,
+            commands::fizgig::launch_fizgig,
         ])
         .build(tauri::generate_context!())
         .expect("error while running LoRA Dataset Studio")
