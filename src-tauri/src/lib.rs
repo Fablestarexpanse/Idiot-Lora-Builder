@@ -18,6 +18,7 @@ pub fn run() {
             commands::images::multi_crop,
             commands::images::batch_resize,
             commands::images::delete_image,
+            commands::images::delete_images,
             commands::captions::read_caption,
             commands::captions::get_captions_batch,
             commands::captions::write_caption,

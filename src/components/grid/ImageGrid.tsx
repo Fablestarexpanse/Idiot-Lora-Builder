@@ -93,18 +93,32 @@ export const ImageGrid = memo(function ImageGrid() {
   // Apply filters + sort (shared pipeline so all views walk the same order)
   const sortBy = useFilterStore((s) => s.sortBy);
   const sortOrder = useFilterStore((s) => s.sortOrder);
-  const images = useMemo(
-    () =>
-      selectVisibleImages(allImages, {
-        showCaptioned,
-        tagFilter,
-        query,
-        ratingFilter,
-        sortBy,
-        sortOrder,
-      }),
-    [allImages, showCaptioned, tagFilter, query, ratingFilter, sortBy, sortOrder]
-  );
+  const cropStatusFilter = useFilterStore((s) => s.cropStatusFilter);
+  const images = useMemo(() => {
+    // Crop-status pre-filter (missing status counts as "uncropped").
+    const base = cropStatusFilter
+      ? allImages.filter(
+          (img) => (img.crop_status ?? "uncropped") === cropStatusFilter
+        )
+      : allImages;
+    return selectVisibleImages(base, {
+      showCaptioned,
+      tagFilter,
+      query,
+      ratingFilter,
+      sortBy,
+      sortOrder,
+    });
+  }, [
+    allImages,
+    cropStatusFilter,
+    showCaptioned,
+    tagFilter,
+    query,
+    ratingFilter,
+    sortBy,
+    sortOrder,
+  ]);
 
   useEffect(() => {
     const container = gridRef.current;
@@ -265,7 +279,23 @@ export const ImageGrid = memo(function ImageGrid() {
         }
       };
 
+      // Ctrl+A: select all currently-visible (filtered + sorted) images
+      if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        useSelectionStore.getState().selectAll(images.map((img) => img.id));
+        return;
+      }
+
       switch (e.key) {
+        case "Escape": {
+          // Clear multi-selection; modals stop propagation of their own Escape.
+          const selection = useSelectionStore.getState();
+          if (selection.selectedIds.size > 0) {
+            e.preventDefault();
+            selection.clearSelection();
+          }
+          break;
+        }
         case "ArrowRight":
           navigate(1);
           break;

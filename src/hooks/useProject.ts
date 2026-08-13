@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useProjectStore } from "@/stores/projectStore";
-import { loadProject, loadImageDimensions } from "@/lib/tauri";
-import type { ImageEntry } from "@/types";
+import { useSelectionStore } from "@/stores/selectionStore";
+import { loadProject, loadImageDimensions, getCropStatuses } from "@/lib/tauri";
+import type { CropStatus, ImageEntry } from "@/types";
 
 /** How many images to request dimensions for per backend round-trip. */
 const DIMENSION_CHUNK = 200;
@@ -36,6 +37,57 @@ export function useProjectImages() {
       return () => clearTimeout(t);
     }
   }, [query.isSuccess, query.isError, setIsLoadingProject, setProjectDataReady]);
+
+  // Reconcile selection after images load/refetch: drop any selected ids that
+  // no longer exist (deleted/renamed outside the optimistic cache updates).
+  const reconcileData = query.data;
+  useEffect(() => {
+    if (!reconcileData) return;
+    const idSet = new Set(reconcileData.map((img) => img.id));
+    const selection = useSelectionStore.getState();
+    if (selection.selectedIds.size > 0) {
+      const kept = [...selection.selectedIds].filter((id) => idSet.has(id));
+      if (kept.length !== selection.selectedIds.size) {
+        selection.selectAll(kept);
+      }
+    }
+    if (selection.lastClickedId && !idSet.has(selection.lastClickedId)) {
+      selection.setLastClickedId(null);
+    }
+  }, [reconcileData]);
+
+  // Merge persisted crop statuses into the cached image list once per project
+  // (open_project doesn't read the crop_status sidecar).
+  const cropStatusRootRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!rootPath || !query.isSuccess) return;
+    if (cropStatusRootRef.current === rootPath) return;
+    cropStatusRootRef.current = rootPath;
+    let cancelled = false;
+    getCropStatuses(rootPath)
+      .then((statuses) => {
+        if (cancelled || Object.keys(statuses).length === 0) return;
+        queryClient.setQueryData<ImageEntry[]>(
+          ["project", "images", rootPath],
+          (old) =>
+            old?.map((img) => {
+              const status = statuses[img.relative_path];
+              return status
+                ? { ...img, crop_status: status as CropStatus }
+                : img;
+            })
+        );
+      })
+      .catch(() => {
+        // Allow a retry on the next successful load of this project.
+        if (cropStatusRootRef.current === rootPath) {
+          cropStatusRootRef.current = null;
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rootPath, query.isSuccess, queryClient]);
 
   // Backfill image dimensions in the background (project scan skips them for speed).
   // Powers the dimension display in cells and "sort by dimension".

@@ -26,8 +26,10 @@ interface AiState {
   characterName: string;
   extraOptionIds: string[];
   setWordCount: (n: number | null) => void;
+  setLength: (length: CaptionLength | null) => void;
   setCharacterName: (name: string) => void;
   toggleExtraOption: (id: string) => void;
+  clearExtraOptions: () => void;
 
   // LM Studio settings
   lmStudio: LmStudioSettings;
@@ -99,6 +101,7 @@ export const useAiStore = create<AiState>()(
       characterName: "",
       extraOptionIds: [],
       setWordCount: (wordCount) => set({ wordCount }),
+      setLength: (length) => set({ length }),
       setCharacterName: (characterName) => set({ characterName }),
       toggleExtraOption: (id) =>
         set((state) => {
@@ -114,6 +117,7 @@ export const useAiStore = create<AiState>()(
           }
           return { extraOptionIds: Array.from(next) };
         }),
+      clearExtraOptions: () => set({ extraOptionIds: [] }),
 
       // LM Studio
       lmStudio: {

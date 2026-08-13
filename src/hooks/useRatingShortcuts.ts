@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useProjectStore } from "@/stores/projectStore";
-import { setImageRating } from "@/lib/tauri";
-import type { ImageRating } from "@/types";
+import { setImageRating, setRatingsBatch } from "@/lib/tauri";
+import type { ImageEntry, ImageRating } from "@/types";
 
 const RATING_KEYS = ["1", "2", "3"] as const;
 const KEY_TO_RATING: Record<string, ImageRating> = {
@@ -35,9 +35,61 @@ export function useRatingShortcuts(): void {
       if (!RATING_KEYS.includes(e.key as "1" | "2" | "3")) return;
       if (isTypingInInput()) return;
 
-      const selectedImage = useSelectionStore.getState().selectedImage;
+      const { selectedImage, selectedIds } = useSelectionStore.getState();
       const rootPath = useProjectStore.getState().rootPath;
-      if (!selectedImage || !rootPath) return;
+      if (!rootPath) return;
+
+      // Multi-select: apply the rating to every selected image in one batch.
+      if (selectedIds.size > 0) {
+        const images = queryClientRef.current.getQueryData<ImageEntry[]>([
+          "project",
+          "images",
+          rootPath,
+        ]);
+        const targets = images?.filter((img) => selectedIds.has(img.id)) ?? [];
+        if (targets.length === 0) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        const rating = KEY_TO_RATING[e.key];
+        // Toggle semantics: if every selected image already has this rating,
+        // clear them all instead.
+        const newRating: ImageRating = targets.every(
+          (img) => img.rating === rating
+        )
+          ? "none"
+          : rating;
+
+        setRatingsBatch(
+          rootPath,
+          targets.map((img) => ({
+            relative_path: img.relative_path,
+            rating: newRating,
+          }))
+        )
+          .then(() => {
+            queryClientRef.current.setQueryData<ImageEntry[]>(
+              ["project", "images", rootPath],
+              (old) =>
+                old?.map((img) =>
+                  selectedIds.has(img.id) ? { ...img, rating: newRating } : img
+                )
+            );
+            const current = useSelectionStore.getState().selectedImage;
+            if (current && selectedIds.has(current.id)) {
+              useSelectionStore
+                .getState()
+                .setSelectedImage({ ...current, rating: newRating });
+            }
+          })
+          .catch((err) => {
+            console.error("Batch rating shortcut failed:", err);
+          });
+        return;
+      }
+
+      if (!selectedImage) return;
 
       e.preventDefault();
       e.stopPropagation();

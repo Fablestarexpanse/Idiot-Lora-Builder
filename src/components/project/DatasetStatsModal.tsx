@@ -1,7 +1,8 @@
-import { useMemo } from "react";
-import { BarChart3 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { BarChart3, Scaling } from "lucide-react";
 import { useProjectImages } from "@/hooks/useProject";
 import { Modal } from "@/components/ui/Modal";
+import { BatchResizeModal } from "@/components/resize/BatchResizeModal";
 
 interface DatasetStatsModalProps {
   isOpen: boolean;
@@ -10,6 +11,7 @@ interface DatasetStatsModalProps {
 
 export function DatasetStatsModal({ isOpen, onClose }: DatasetStatsModalProps) {
   const { data: images = [] } = useProjectImages();
+  const [showBatchResize, setShowBatchResize] = useState(false);
 
   const stats = useMemo(() => {
     const captioned = images.filter((img) => img.has_caption);
@@ -69,6 +71,7 @@ export function DatasetStatsModal({ isOpen, onClose }: DatasetStatsModalProps) {
   }, [images]);
 
   return (
+    <>
     <Modal
       isOpen={isOpen}
       onClose={onClose}
@@ -163,12 +166,25 @@ export function DatasetStatsModal({ isOpen, onClose }: DatasetStatsModalProps) {
               </div>
             </div>
             {(stats.outside512 > 0 || stats.oddDimensions > 0) && (
-              <p className="mt-2 text-xs text-gray-500">
-                Use Batch Resize to normalize dimensions for training.
-              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  setShowBatchResize(true);
+                }}
+                className="mt-2 flex items-center gap-1.5 rounded border border-border bg-surface px-2 py-1 text-xs text-gray-300 hover:bg-white/10 hover:text-gray-100"
+              >
+                <Scaling className="h-3.5 w-3.5" />
+                Batch Resize to normalize dimensions for training
+              </button>
             )}
           </div>
       </div>
     </Modal>
+    <BatchResizeModal
+      isOpen={showBatchResize}
+      onClose={() => setShowBatchResize(false)}
+    />
+    </>
   );
 }

@@ -2,23 +2,23 @@
 
 A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, etc.). Tag and caption images, rate and curate them, crop for training, use local AI (LM Studio or Ollama), and export to folder or ZIP.
 
-![Version](https://img.shields.io/badge/version-0.4.1-blue.svg)
+![Version](https://img.shields.io/badge/version-0.6.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 ![LoRA Dataset Studio — main window](assets/screenshot.png)
 
 ## Features
 
-- **Grid & ratings** — Open a folder, rate images (Good / Bad / Needs Edit), multi-select, virtualized grid for thousands of images
-- **Filtering & sorting** — Filter by rating, caption state, or search text; sort by name/size/dimensions
-- **Tag editing** — Inline captions, right-panel tag editor, search/replace, trigger word, add-tag-to-all with preview
-- **AI captioning** — Built-in local captioner (one-click download of a Qwen3-VL vision model, runs fully offline on GPU via Vulkan or CPU), or connect to LM Studio / Ollama; single or batch; rating filter; Prose / Danbooru / e621 caption style presets
-- **Preview & crop** — Full-size view with zoom, prev/next; crop tool with flip/rotate, square output sizes (e.g. 512/1024), save-as-new, and multi-crop (several regions from one image). Per-image crop status tracking. Face detection (YuNet ONNX, downloaded on first use) auto-centers crops on faces.
+- **Grid & ratings** — Open a folder, rate images (Good / Bad / Needs Edit), virtualized grid for thousands of images. Multi-select with Ctrl+Click, Shift+Click range select, Ctrl+A select-all-visible; rate or delete the whole selection at once
+- **Filtering & sorting** — Filter by rating, caption state, crop status, or search text; sort by name/size/dimensions
+- **Tag editing** — Inline captions, right-panel tag editor, search/replace, trigger word (always kept first, including on AI-generated captions), add-tag-to-all with preview
+- **AI captioning** — Built-in local captioner (one-click download of a Qwen3-VL vision model, runs fully offline on GPU via Vulkan or CPU), or connect to LM Studio / Ollama; single or batch; rating filter; Prose / Danbooru / e621 caption style presets; caption length control and 26 toggleable extra instructions (lighting, camera angle, shot type, PG vs. blunt language, refer-by-name, …)
+- **Preview & crop** — Full-size view with zoom, prev/next; crop tool with flip/rotate, square output sizes (e.g. 512/1024), save-as-new, and multi-crop (several regions from one image). Per-image crop status tracking with grid filtering. Face detection (YuNet ONNX, downloaded on first use) auto-centers crops on faces.
 - **Batch rename** — Rename image + caption pairs with a pattern and sequential numbering
+- **Batch resize** — Resize / center-crop / fit to a target size (512/768/1024 presets) for all, selected, or Good-rated images; outputs to a folder with captions copied
 - **Export** — Folder or ZIP; export all, selected, or by rating (good/bad/needs_edit subfolders); trigger word, sequential naming
-- **Send to Fizgig** — One-click handoff to a local [Fizgig](https://github.com/shootthesound/Fizgig) install (LoRA training workbench): exports only your Good-rated images + captions to a `<project>_fizgig` staging folder (cleared on each send so demoted images never linger), launches Fizgig, and copies the staging path to your clipboard for its Start tab. Set the Fizgig folder under Settings → Integrations.
-- **Tools** — Find duplicates (SHA-256 content hash), dataset stats, clear all tags (type "clear" to confirm), clear all ratings
-- Batch resize exists in the Rust backend (`batch_resize`: resize / center-crop / fit to a target size, copies captions) but has **no UI yet**.
+- **Send to Fizgig** — Handoff to a local [Fizgig](https://github.com/shootthesound/Fizgig) install (LoRA training workbench): a dialog lets you name the dataset and choose what to include (by rating, all, or current selection), then exports images + captions into Fizgig's own `dataset/<name>` folder (cleared on each send so demoted images never linger), launches Fizgig, and copies the path to your clipboard for its Start tab. Set the Fizgig folder under Settings → Integrations.
+- **Tools** — Find duplicates (SHA-256 content hash) with per-file delete and keep-largest actions, dataset stats, clear all tags (type "clear" to confirm), clear all ratings
 
 ## Performance
 
@@ -100,25 +100,32 @@ Everything stays with your images — no database, no cloud:
 
 1. **Open** a folder of images.
 2. **Edit tags** — click caption under an image or use the right panel.
-3. **Rate** — Good / Bad / Needs Edit (or 1 / 2 / 3 when focused).
+3. **Rate** — Good / Bad / Needs Edit (or 1 / 2 / 3; with a multi-selection active, rates all selected images).
 4. **AI** — Choose Built-in (local), LM Studio, or Ollama in the AI panel, then Generate Caption (single) or Batch. The built-in captioner offers a one-time model download (Qwen3-VL 8B or 4B) and runs fully offline.
 5. **Export** — Export → choose what to export (all, selected, by rating, etc.) → pick destination.
-6. **Train** — Send to Fizgig exports your Good-rated images to a staging folder and launches Fizgig with the path on your clipboard (set its folder in Settings → Integrations first).
+6. **Train** — Send to Fizgig: name the dataset, pick what to include (by rating / all / selection), and it exports into Fizgig's `dataset/<name>` folder and launches Fizgig with the path on your clipboard (set its folder in Settings → Integrations first).
 
 ### Shortcuts
 
-| Action            | Shortcut        |
-|-------------------|-----------------|
-| Navigate grid     | Arrow keys      |
-| First / last      | Home / End      |
-| Multi-select      | Ctrl+Click      |
-| Preview           | Enter / double-click |
-| Close             | Escape          |
-| Zoom (preview)    | + / −           |
-| Prev/next (preview) | ← / →         |
-| Undo / redo       | Ctrl+Z / Ctrl+Y |
-| Rating 1/2/3      | 1 / 2 / 3 (grid or preview)      |
-| Help              | ?               |
+| Action              | Shortcut        |
+|---------------------|-----------------|
+| Navigate grid       | Arrow keys      |
+| First / last        | Home / End      |
+| Multi-select        | Ctrl+Click      |
+| Range select        | Shift+Click     |
+| Select all visible  | Ctrl+A          |
+| Clear selection     | Escape          |
+| Preview             | Enter / double-click |
+| Select tile         | Space           |
+| Rate                | 1 / 2 / 3 (applies to the whole selection when multi-selected) |
+| Focus tag input     | T               |
+| Undo / redo (tags)  | Ctrl+Z / Ctrl+Y |
+| Close dialog        | Escape          |
+| Zoom (preview)      | + / −           |
+| Prev/next (preview) | ← / →           |
+| Nudge crop box      | Arrow keys (crop tool) |
+| Apply crop          | Ctrl+Enter (crop tool) |
+| Save crop as new    | S (crop tool)   |
 
 ## Caption format
 

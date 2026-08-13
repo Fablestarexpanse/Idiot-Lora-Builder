@@ -7,12 +7,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Send to Fizgig** toolbar button: exports only your **Good-rated** images
-  (with captions) to a dedicated `<project>_fizgig` staging folder — cleared on
-  each send so demoted images never linger — then launches your local
+- **Batch operations on multi-select**: Shift+Click range select, Ctrl+A
+  select-all-visible, Escape clears selection; pressing 1/2/3 with a
+  multi-selection rates every selected image at once; a Delete button in the
+  filter bar removes the whole selection (with confirmation).
+- **Batch resize UI**: resize / center-crop / fit to a target size
+  (512/768/1024 presets) for all, selected, or Good-rated images — the backend
+  existed since v0.5 but had no UI.
+- **Caption customizer**: caption length control (Short/Medium/Long) and a
+  collapsible "Extra instructions" panel with 26 toggleable prompt options
+  (lighting, camera angle, shot type, PG vs. blunt language, refer-by-name, …).
+- **Duplicate finder actions**: thumbnails and full paths per group, per-file
+  delete, and a "Keep largest" quick action — previously view-only.
+- **Crop-status filtering**: crop statuses now load from disk into the grid
+  and can be filtered via new chips (previously write-only data).
+- **Delete downloaded model** button in the built-in captioner setup to
+  reclaim disk space.
+- **Send to Fizgig**: handoff to a local
   [Fizgig](https://github.com/shootthesound/Fizgig) install (LoRA training
-  workbench) with the staging path copied to the clipboard for Fizgig's Start
-  tab. Configure the Fizgig folder under Settings → Integrations.
+  workbench). A dialog lets you name the dataset and choose what to include
+  (by rating / all images / current selection); images + captions export into
+  Fizgig's own `dataset/<name>` folder (cleared on each send so demoted images
+  never linger), Fizgig launches, and the path is copied to the clipboard for
+  its Start tab. Configure the Fizgig folder under Settings → Integrations.
+
+### Fixed
+
+- AI-generated captions (single and batch) now keep the configured trigger
+  word as the first tag; previously it was silently dropped until the caption
+  was manually edited.
+- "Send to Fizgig" failed silently due to Windows `start` command quoting;
+  Fizgig now launches reliably in its own console window.
+- The test suite's component tests never ran (config excluded .tsx and lacked
+  a DOM environment); fixed, and test coverage expanded from 18 to 99 tests.
 
 ## [0.6.0] - 2026-08-11
 

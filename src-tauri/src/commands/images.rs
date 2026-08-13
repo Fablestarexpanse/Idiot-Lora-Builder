@@ -560,10 +560,10 @@ fn batch_resize_sync(payload: BatchResizePayload) -> Result<BatchResizeResult, S
     })
 }
 
-/// Delete an image file and its caption .txt from disk.
-#[tauri::command]
-pub fn delete_image(image_path: String) -> Result<(), String> {
-    let path = PathBuf::from(&image_path);
+/// Delete a single image file and its caption .txt from disk (shared by the
+/// single and batch delete commands).
+fn delete_image_file(image_path: &str) -> Result<(), String> {
+    let path = PathBuf::from(image_path);
     if !path.exists() || !path.is_file() {
         return Err("Image file not found".to_string());
     }
@@ -573,6 +573,46 @@ pub fn delete_image(image_path: String) -> Result<(), String> {
         let _ = std::fs::remove_file(&txt_path);
     }
     Ok(())
+}
+
+/// Delete an image file and its caption .txt from disk.
+#[tauri::command]
+pub fn delete_image(image_path: String) -> Result<(), String> {
+    delete_image_file(&image_path)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteImagesPayload {
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteImagesResult {
+    pub deleted_count: usize,
+    pub errors: Vec<String>,
+}
+
+/// Delete multiple images (and their caption .txt sidecars) from disk.
+/// Per-path failures are collected as error strings; the command itself only
+/// fails on task-join errors.
+#[tauri::command]
+pub async fn delete_images(payload: DeleteImagesPayload) -> Result<DeleteImagesResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut deleted_count = 0usize;
+        let mut errors = Vec::new();
+        for path in &payload.paths {
+            match delete_image_file(path) {
+                Ok(()) => deleted_count += 1,
+                Err(e) => errors.push(format!("{path}: {e}")),
+            }
+        }
+        DeleteImagesResult {
+            deleted_count,
+            errors,
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[derive(Debug, Deserialize)]

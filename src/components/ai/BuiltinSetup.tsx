@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { CheckCircle2, Download, Loader2, Square, X } from "lucide-react";
+import { CheckCircle2, Download, Loader2, Square, Trash2, X } from "lucide-react";
 import { useAiStore } from "@/stores/aiStore";
 import { useUiStore } from "@/stores/uiStore";
 import {
@@ -10,7 +10,9 @@ import {
   cancelBuiltinDownload,
   stopBuiltinServer,
   getBuiltinServerStatus,
+  deleteBuiltinModel,
 } from "@/lib/tauri";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import type { BuiltinDownloadProgress } from "@/lib/tauri";
 import { BUILTIN_MODELS, BUILTIN_BACKENDS } from "@/types";
 import type { BuiltinBackend, BuiltinModelId } from "@/types";
@@ -42,6 +44,7 @@ export function BuiltinSetup() {
 
   const [progress, setProgress] = useState<BuiltinDownloadProgress | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [showDeleteModel, setShowDeleteModel] = useState(false);
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
   const statusQuery = useQuery({
@@ -90,6 +93,26 @@ export function BuiltinSetup() {
   const cancelMutation = useMutation({
     mutationFn: cancelBuiltinDownload,
     onError: (err: Error) => showToast(err.message || String(err)),
+  });
+
+  const deleteModelMutation = useMutation({
+    mutationFn: async () => {
+      // Stop the local server first if this model is currently loaded.
+      const serverStatus = await getBuiltinServerStatus();
+      if (serverStatus.running && serverStatus.model_id === builtinModelId) {
+        await stopBuiltinServer();
+      }
+      await deleteBuiltinModel(builtinModelId);
+    },
+    onSuccess: () => {
+      setShowDeleteModel(false);
+      queryClient.invalidateQueries({ queryKey: ["builtin-status"] });
+      queryClient.invalidateQueries({ queryKey: ["builtin-server-status"] });
+    },
+    onError: (err: Error) => {
+      setShowDeleteModel(false);
+      showToast(err.message || String(err));
+    },
   });
 
   const stopServerMutation = useMutation({
@@ -190,6 +213,35 @@ export function BuiltinSetup() {
             The first caption after startup takes longer while the model loads
             (up to a few minutes). Later captions are much faster.
           </p>
+          <button
+            type="button"
+            onClick={() => setShowDeleteModel(true)}
+            disabled={deleteModelMutation.isPending}
+            className="flex items-center gap-1.5 rounded bg-gray-700 px-2 py-1 text-xs text-red-300 hover:bg-red-600/20 hover:text-red-400 disabled:opacity-50"
+          >
+            <Trash2 className="h-3 w-3" />
+            Delete downloaded model
+          </button>
+          <ConfirmModal
+            isOpen={showDeleteModel}
+            onCancel={() => setShowDeleteModel(false)}
+            onConfirm={() => deleteModelMutation.mutate()}
+            title="Delete downloaded model?"
+            icon={<Trash2 className="h-5 w-5 text-red-400" />}
+            confirmLabel="Delete model"
+            confirmIcon={<Trash2 className="h-4 w-4" />}
+            confirmButtonClassName="bg-red-600 hover:bg-red-500"
+            isPending={deleteModelMutation.isPending}
+          >
+            <p className="text-sm text-gray-400">
+              Delete the downloaded weights for{" "}
+              {selectedModel?.label ?? builtinModelId}? This frees{" "}
+              {selectedModel?.downloadSize ?? "several GB"} of disk space. The
+              inference engine stays installed; you can re-download the model
+              later. If the local server is running this model, it will be
+              stopped first.
+            </p>
+          </ConfirmModal>
         </div>
       ) : (
         <div className="space-y-2 rounded border border-border bg-surface px-3 py-2">

@@ -12,6 +12,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "audit": "npm audit",
     "audit:ci": "npm audit --audit-level=high"
   },

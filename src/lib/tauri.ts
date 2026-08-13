@@ -21,10 +21,11 @@ import type {
  * - Commands that expect { payload: { ... } }: open_project, get_thumbnail, get_image_data_url,
  *   crop_image, read_caption, write_caption, add_tag, remove_tag, reorder_tags,
  *   test_lm_studio_connection, test_ollama_connection, generate_caption_lm_studio, generate_captions_batch,
- *   clear_all_ratings, set_rating, get_ratings, batch_rename.
+ *   clear_all_ratings, set_rating, set_ratings_batch, get_ratings, batch_rename, delete_images,
+ *   get_crop_statuses, batch_resize.
  * - Commands that expect the args object directly (no "payload" key): find_duplicates, delete_image,
- *   batch_resize, export_dataset, export_by_rating, get_builtin_status, download_builtin,
- *   ensure_builtin_server.
+ *   export_dataset, export_by_rating, get_builtin_status, download_builtin,
+ *   ensure_builtin_server, delete_builtin_model.
  * - No args: get_resource_stats, cancel_builtin_download, stop_builtin_server,
  *   get_builtin_server_status.
  */
@@ -147,6 +148,18 @@ export async function deleteImage(imagePath: string): Promise<void> {
   return invoke<void>("delete_image", { image_path: imagePath });
 }
 
+export interface DeleteImagesResult {
+  deleted_count: number;
+  errors: string[];
+}
+
+/** Deletes multiple image files and their caption .txt sidecars from disk. */
+export async function deleteImages(paths: string[]): Promise<DeleteImagesResult> {
+  return invoke<DeleteImagesResult>("delete_images", {
+    payload: { paths },
+  });
+}
+
 export type BatchResizeMode = "resize" | "center_crop" | "fit";
 
 export interface BatchResizeResult {
@@ -164,10 +177,12 @@ export async function batchResize(
   outputFolder: string
 ): Promise<BatchResizeResult> {
   return invoke<BatchResizeResult>("batch_resize", {
-    image_paths: imagePaths,
-    target_size: targetSize,
-    mode,
-    output_folder: outputFolder,
+    payload: {
+      image_paths: imagePaths,
+      target_size: targetSize,
+      mode,
+      output_folder: outputFolder,
+    },
   });
 }
 
@@ -348,6 +363,11 @@ export async function ensureBuiltinServer(
   return invoke<string>("ensure_builtin_server", { modelId, backend });
 }
 
+/** Deletes downloaded model weights (not the server runtime) to free disk space. */
+export async function deleteBuiltinModel(modelId: BuiltinModelId): Promise<void> {
+  return invoke<void>("delete_builtin_model", { modelId });
+}
+
 /** Stop the local llama-server (frees RAM/VRAM). */
 export async function stopBuiltinServer(): Promise<void> {
   return invoke<void>("stop_builtin_server");
@@ -410,6 +430,24 @@ export async function setImageRating(
       root_path: rootPath,
       relative_path: relativePath,
       rating,
+    },
+  });
+}
+
+export interface RatingChange {
+  relative_path: string;
+  rating: ImageRating;
+}
+
+/** Set ratings for multiple images in a single backend write. */
+export async function setRatingsBatch(
+  rootPath: string,
+  changes: RatingChange[]
+): Promise<void> {
+  return invoke<void>("set_ratings_batch", {
+    payload: {
+      root_path: rootPath,
+      changes,
     },
   });
 }
@@ -479,6 +517,15 @@ export async function multiCrop(payload: MultiCropPayload): Promise<string[]> {
 
 export type { CropStatus } from "@/types";
 import type { CropStatus } from "@/types";
+
+/** Get all crop statuses for a project as a map of relative path -> status. */
+export async function getCropStatuses(
+  rootPath: string
+): Promise<Record<string, string>> {
+  return invoke<Record<string, string>>("get_crop_statuses", {
+    payload: { root_path: rootPath },
+  });
+}
 
 export async function setCropStatus(
   rootPath: string,
