@@ -64,16 +64,19 @@ pub fn launch_fizgig(payload: LaunchFizgigPayload) -> Result<(), String> {
         );
     }
 
-    // `start` detaches into its own console window so Fizgig outlives us and
-    // its server output stays visible to the user.
-    Command::new("cmd")
-        .arg("/C")
-        .arg("start")
-        .arg("Fizgig")
-        .arg("/D")
-        .arg(&dir)
-        .arg(bat.as_os_str())
-        .spawn()
+    // Run the bat via cmd in its own new console window (CREATE_NEW_CONSOLE)
+    // so Fizgig's server output stays visible and it survives our exit.
+    // Deliberately NOT using `start`: its title-vs-command parsing breaks on
+    // quoted paths with spaces and fails silently inside the detached cmd.
+    let mut cmd = Command::new("cmd");
+    cmd.arg("/C").arg(bat.as_os_str()).current_dir(&dir);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+        cmd.creation_flags(CREATE_NEW_CONSOLE);
+    }
+    cmd.spawn()
         .map_err(|e| format!("Failed to launch Fizgig: {e}"))?;
     Ok(())
 }
