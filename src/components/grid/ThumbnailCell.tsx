@@ -16,23 +16,15 @@ import { withThumbnailInvokeLimit } from "@/lib/thumbnailInvokeLimit";
 import { useAiStore } from "@/stores/aiStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useSearchReplaceStore } from "@/stores/searchReplaceStore";
+import { useFilterStore } from "@/stores/filterStore";
+import { selectVisibleImages } from "@/lib/imageFilter";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { highlightTerm } from "@/lib/highlight";
+import { parseTagsFromText, tagsToText, applyTriggerWord } from "@/lib/tags";
 import type { ImageEntry, ImageRating } from "@/types";
-
-function parseTagsFromText(text: string): string[] {
-  return text
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
-
-function tagsToText(tags: string[]): string {
-  return tags.join(", ");
-}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -246,10 +238,8 @@ export const ThumbnailCell = memo(function ThumbnailCell({
     },
     onSuccess: async (result) => {
       if (result?.success && result.caption) {
-        const tags = result.caption
-          .split(",")
-          .map((t) => t.trim())
-          .filter((t) => t.length > 0);
+        // Keep the trigger word first — AI output doesn't include it.
+        const tags = applyTriggerWord(parseTagsFromText(result.caption), triggerWord);
         await writeCaption(entry.path, tags);
         
         // Optimistic update
@@ -308,14 +298,7 @@ export const ThumbnailCell = memo(function ThumbnailCell({
 
   function handleCaptionBlur() {
     setIsEditing(false);
-    let tags = parseTagsFromText(captionText);
-    const tw = triggerWord?.trim();
-    if (tw) {
-      const withoutTrigger = tags.filter(
-        (t) => t.trim().toLowerCase() !== tw.toLowerCase()
-      );
-      tags = [tw, ...withoutTrigger];
-    }
+    const tags = applyTriggerWord(parseTagsFromText(captionText), triggerWord);
     const prevTags = entry.tags;
     const tagsChanged =
       tags.length !== prevTags.length || tags.some((t, i) => t !== prevTags[i]);
@@ -359,11 +342,45 @@ export const ThumbnailCell = memo(function ThumbnailCell({
   });
 
   function handleImageClick(e: React.MouseEvent) {
+    const selection = useSelectionStore.getState();
+    if (e.shiftKey && selection.lastClickedId && rootPath) {
+      // Shift+Click: select the range between the anchor and this image in the
+      // current visible (filtered + sorted) order the grid renders.
+      const allImages =
+        queryClient.getQueryData<ImageEntry[]>([
+          "project",
+          "images",
+          rootPath,
+        ]) ?? [];
+      const filter = useFilterStore.getState();
+      const base = filter.cropStatusFilter
+        ? allImages.filter(
+            (img) => (img.crop_status ?? "uncropped") === filter.cropStatusFilter
+          )
+        : allImages;
+      const visible = selectVisibleImages(base, filter);
+      const anchorIndex = visible.findIndex(
+        (img) => img.id === selection.lastClickedId
+      );
+      const targetIndex = visible.findIndex((img) => img.id === entry.id);
+      if (anchorIndex !== -1 && targetIndex !== -1) {
+        const [start, end] =
+          anchorIndex <= targetIndex
+            ? [anchorIndex, targetIndex]
+            : [targetIndex, anchorIndex];
+        selection.selectRange(
+          visible.slice(start, end + 1).map((img) => img.id)
+        );
+        return;
+      }
+    }
     if (e.ctrlKey || e.metaKey) {
       // Ctrl+Click for multi-select
       toggleSelection(entry.id);
+      selection.setLastClickedId(entry.id);
     } else {
       setSelectedImage(entry);
+      selection.setLastClickedId(entry.id);
     }
   }
 

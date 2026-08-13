@@ -13,6 +13,7 @@ import { useAiStore } from "@/stores/aiStore";
 import { useUiStore } from "@/stores/uiStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useProjectStore } from "@/stores/projectStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { useProjectImages } from "@/hooks/useProject";
 import {
   testLmStudioConnection,
@@ -26,8 +27,16 @@ import { Modal } from "@/components/ui/Modal";
 import { BuiltinSetup } from "@/components/ai/BuiltinSetup";
 import { buildEffectivePrompt } from "@/lib/promptBuilder";
 import { buildBatchCaptionTargets } from "@/lib/batchCaptionTargets";
-import { DEFAULT_PROMPT_TEMPLATES } from "@/types";
-import type { ImageEntry } from "@/types";
+import { parseTagsFromText, applyTriggerWord } from "@/lib/tags";
+import { DEFAULT_EXTRA_OPTIONS, DEFAULT_PROMPT_TEMPLATES } from "@/types";
+import type { CaptionLength, ImageEntry } from "@/types";
+
+const LENGTH_CHOICES: { value: CaptionLength | null; label: string }[] = [
+  { value: null, label: "Off" },
+  { value: "short", label: "Short" },
+  { value: "medium", label: "Medium" },
+  { value: "long", label: "Long" },
+];
 
 export function AiPanel() {
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
@@ -49,7 +58,10 @@ export function AiPanel() {
   const characterName = useAiStore((s) => s.characterName);
   const extraOptionIds = useAiStore((s) => s.extraOptionIds);
   const setWordCount = useAiStore((s) => s.setWordCount);
+  const setLength = useAiStore((s) => s.setLength);
   const setCharacterName = useAiStore((s) => s.setCharacterName);
+  const toggleExtraOption = useAiStore((s) => s.toggleExtraOption);
+  const clearExtraOptions = useAiStore((s) => s.clearExtraOptions);
   const addPromptTemplate = useAiStore((s) => s.addPromptTemplate);
   const removePromptTemplate = useAiStore((s) => s.removePromptTemplate);
   const lmStudio = useAiStore((s) => s.lmStudio);
@@ -218,10 +230,11 @@ export function AiPanel() {
         const written = new Map<string, string[]>();
         for (const result of results) {
           if (result.success && result.caption) {
-            const tags = result.caption
-              .split(",")
-              .map((t) => t.trim())
-              .filter((t) => t);
+            // Keep the trigger word first — AI output doesn't include it.
+            const tags = applyTriggerWord(
+              parseTagsFromText(result.caption),
+              useSettingsStore.getState().triggerWord
+            );
             await writeCaption(result.path, tags);
             written.set(result.path, tags);
           } else {
@@ -626,7 +639,81 @@ export function AiPanel() {
             />
           </div>
         </div>
+
+        {/* Caption length */}
+        <div className="mt-3">
+          <label className="mb-1 block text-xs text-gray-500">Caption length</label>
+          <div className="flex flex-wrap gap-2">
+            {LENGTH_CHOICES.map((choice) => (
+              <button
+                key={choice.label}
+                type="button"
+                onClick={() => setLength(choice.value)}
+                className={`min-w-[3.5rem] flex-1 shrink-0 whitespace-nowrap rounded px-2 py-1.5 text-xs font-medium ${
+                  length === choice.value
+                    ? "bg-purple-600 text-white"
+                    : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                }`}
+              >
+                {choice.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
+
+      {/* Extra instructions */}
+      <details className="border-b border-border">
+        <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-xs text-gray-500 hover:text-gray-400">
+          <span>
+            Extra instructions
+            {extraOptionIds.length > 0 && ` (${extraOptionIds.length})`}
+          </span>
+          {extraOptionIds.length > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                clearExtraOptions();
+              }}
+              className="text-xs text-blue-400 hover:text-blue-300"
+            >
+              Clear all
+            </button>
+          )}
+        </summary>
+        <div className="grid gap-1 border-t border-border bg-surface/50 p-3 sm:grid-cols-2">
+          {DEFAULT_EXTRA_OPTIONS.map((option) => {
+            const checked = extraOptionIds.includes(option.id);
+            const usesName = option.text.includes("{name}");
+            return (
+              <label
+                key={option.id}
+                className={`flex cursor-pointer items-start gap-2 rounded border px-2 py-1.5 text-xs hover:bg-white/5 ${
+                  checked
+                    ? "border-purple-500 bg-purple-500/20 text-purple-200"
+                    : "border-border bg-surface text-gray-300"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleExtraOption(option.id)}
+                  className="mt-0.5 rounded border-gray-600"
+                />
+                <span className="min-w-0">
+                  {option.label}
+                  {usesName && (
+                    <span className="block text-[10px] text-gray-500">
+                      Uses the Character name field
+                    </span>
+                  )}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </details>
 
       {/* Prompt used (read-only) */}
       <details className="border-b border-border group">
