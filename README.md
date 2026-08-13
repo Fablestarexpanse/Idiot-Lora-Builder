@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="LoRA Dataset Studio logo" width="480" />
+</p>
+
 # LoRA Dataset Studio
 
 A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, etc.). Tag and caption images, rate and curate them, crop for training, use local AI (LM Studio or Ollama), and export to folder or ZIP.
