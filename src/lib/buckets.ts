@@ -20,6 +20,8 @@ export const BUILTIN_PROFILES: TrainerProfile[] = [
   { id: "flux_aitoolkit", name: "Flux (ai-toolkit)", baseRes: 1024, step: 64, minRes: 512, maxRes: 1536 },
   { id: "flux_kohya", name: "Flux (kohya)", baseRes: 1024, step: 64, minRes: 512, maxRes: 1536 },
   { id: "chroma", name: "Chroma", baseRes: 1024, step: 64, minRes: 512, maxRes: 1536 },
+  { id: "sd35", name: "SD 3.5 (1024)", baseRes: 1024, step: 64, minRes: 512, maxRes: 1536 },
+  { id: "illustrious", name: "Illustrious/Pony (1024)", baseRes: 1024, step: 64, minRes: 512, maxRes: 1536 },
 ];
 
 function approximateRatioLabel(w: number, h: number): string {
@@ -52,17 +54,24 @@ function approximateRatioLabel(w: number, h: number): string {
   return best[1];
 }
 
-function deduplicateByRatio(buckets: BucketSize[]): BucketSize[] {
-  // Group by ratio (rounded to 2 decimals), keep one per group
+function deduplicateByRatio(buckets: BucketSize[], basePixels: number): BucketSize[] {
+  // Group by ratio (rounded to 2 decimals); per group keep the bucket whose
+  // pixel count is closest to baseRes^2 (so SDXL's square bucket is
+  // 1024x1024, not the first-scanned 960x960).
   const groups = new Map<string, BucketSize>();
-  
+
   for (const bucket of buckets) {
     const key = bucket.ratio.toFixed(2);
-    if (!groups.has(key)) {
+    const existing = groups.get(key);
+    if (
+      !existing ||
+      Math.abs(bucket.width * bucket.height - basePixels) <
+        Math.abs(existing.width * existing.height - basePixels)
+    ) {
       groups.set(key, bucket);
     }
   }
-  
+
   // Sort by ratio (portrait to landscape)
   return Array.from(groups.values()).sort((a, b) => a.ratio - b.ratio);
 }
@@ -86,6 +95,6 @@ export function computeBuckets(profile: TrainerProfile): BucketSize[] {
     }
   }
   
-  return deduplicateByRatio(buckets);
+  return deduplicateByRatio(buckets, basePixels);
 }
 

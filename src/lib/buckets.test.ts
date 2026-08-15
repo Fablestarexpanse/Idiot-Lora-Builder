@@ -10,7 +10,7 @@ function getProfile(id: string): TrainerProfile {
 
 // NOTE: approximateRatioLabel is not exported from buckets.ts, so its
 // behavior is verified through the labels on computeBuckets output.
-describe.each(["sd15", "sdxl"])("computeBuckets(%s)", (profileId) => {
+describe.each(["sd15", "sdxl", "sd35", "illustrious"])("computeBuckets(%s)", (profileId) => {
   const profile = getProfile(profileId);
   const buckets = computeBuckets(profile);
 
@@ -63,23 +63,61 @@ describe.each(["sd15", "sdxl"])("computeBuckets(%s)", (profileId) => {
   });
 });
 
-describe("ratio dedup keeps the first-scanned bucket", () => {
-  // NOTE: documents current behavior — deduplicateByRatio keeps the FIRST
-  // bucket encountered per 2-decimal ratio key (scan order: smallest width
-  // first), NOT the one closest to baseRes. For SDXL the square bucket is
-  // therefore 960x960 (12.1% below 1024^2 pixels), and 1024x1024 is dropped.
+describe("ratio dedup keeps the bucket closest to baseRes^2 pixels", () => {
   it("SD 1.5 square bucket is 512x512 (base res itself)", () => {
     const square = computeBuckets(getProfile("sd15")).find((b) => b.ratio === 1);
     expect(square).toMatchObject({ width: 512, height: 512 });
   });
 
-  it("SDXL square bucket is 960x960, not the 1024x1024 base res", () => {
+  it("SDXL square bucket is the 1024x1024 base res, not 960x960", () => {
     const buckets = computeBuckets(getProfile("sdxl"));
     const square = buckets.find((b) => b.ratio === 1);
-    expect(square).toMatchObject({ width: 960, height: 960 });
+    expect(square).toMatchObject({ width: 1024, height: 1024 });
     expect(
-      buckets.find((b) => b.width === 1024 && b.height === 1024)
+      buckets.find((b) => b.width === 960 && b.height === 960)
     ).toBeUndefined();
+  });
+
+  it("every surviving bucket is the closest-to-base among its ratio group", () => {
+    for (const id of ["sd15", "sdxl"]) {
+      const profile = getProfile(id);
+      const basePixels = profile.baseRes * profile.baseRes;
+      const buckets = computeBuckets(profile);
+      for (const b of buckets) {
+        const kept = Math.abs(b.width * b.height - basePixels);
+        // No candidate with the same 2-decimal ratio key can be strictly
+        // closer to baseRes^2 than the kept bucket.
+        for (let w = profile.minRes; w <= profile.maxRes; w += profile.step) {
+          for (let h = profile.minRes; h <= profile.maxRes; h += profile.step) {
+            const pixels = w * h;
+            if (Math.abs(pixels - basePixels) / basePixels >= 0.15) continue;
+            if ((w / h).toFixed(2) !== b.ratio.toFixed(2)) continue;
+            expect(Math.abs(pixels - basePixels)).toBeGreaterThanOrEqual(kept);
+          }
+        }
+      }
+    }
+  });
+});
+
+describe("builtin profiles", () => {
+  it("includes SD 3.5 and Illustrious/Pony 1024-base profiles", () => {
+    const sd35 = getProfile("sd35");
+    expect(sd35.name).toBe("SD 3.5 (1024)");
+    expect(sd35.baseRes).toBe(1024);
+    const illu = getProfile("illustrious");
+    expect(illu.name).toBe("Illustrious/Pony (1024)");
+    expect(illu.baseRes).toBe(1024);
+    for (const p of [sd35, illu]) {
+      expect(p.minRes).toBeLessThan(p.baseRes);
+      expect(p.maxRes).toBeGreaterThan(p.baseRes);
+      expect(p.step).toBe(64);
+    }
+  });
+
+  it("has unique ids", () => {
+    const ids = BUILTIN_PROFILES.map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
 
