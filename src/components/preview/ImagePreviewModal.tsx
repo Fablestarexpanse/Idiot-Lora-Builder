@@ -34,6 +34,7 @@ export function ImagePreviewModal({ isOpen, onClose }: ImagePreviewModalProps) {
   const ratingFilter = useFilterStore((s) => s.ratingFilter);
   const sortBy = useFilterStore((s) => s.sortBy);
   const sortOrder = useFilterStore((s) => s.sortOrder);
+  const cropStatusFilter = useFilterStore((s) => s.cropStatusFilter);
   const images = useMemo(
     () =>
       selectVisibleImages(allImages, {
@@ -43,8 +44,9 @@ export function ImagePreviewModal({ isOpen, onClose }: ImagePreviewModalProps) {
         ratingFilter,
         sortBy,
         sortOrder,
+        cropStatusFilter,
       }),
-    [allImages, showCaptioned, tagFilter, query, ratingFilter, sortBy, sortOrder]
+    [allImages, showCaptioned, tagFilter, query, ratingFilter, sortBy, sortOrder, cropStatusFilter]
   );
 
   const [zoom, setZoom] = useState(1);

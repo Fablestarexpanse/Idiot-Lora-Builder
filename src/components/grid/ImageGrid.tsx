@@ -95,19 +95,14 @@ export const ImageGrid = memo(function ImageGrid() {
   const sortOrder = useFilterStore((s) => s.sortOrder);
   const cropStatusFilter = useFilterStore((s) => s.cropStatusFilter);
   const images = useMemo(() => {
-    // Crop-status pre-filter (missing status counts as "uncropped").
-    const base = cropStatusFilter
-      ? allImages.filter(
-          (img) => (img.crop_status ?? "uncropped") === cropStatusFilter
-        )
-      : allImages;
-    return selectVisibleImages(base, {
+    return selectVisibleImages(allImages, {
       showCaptioned,
       tagFilter,
       query,
       ratingFilter,
       sortBy,
       sortOrder,
+      cropStatusFilter,
     });
   }, [
     allImages,

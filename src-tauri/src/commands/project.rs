@@ -14,6 +14,7 @@ use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
 
 use super::common::{caption_path_for, is_image_path, normalize_rel_key};
+use super::crop_status::load_crop_statuses;
 use super::ratings::{load_ratings, ImageRating};
 
 const PROGRESS_EVENT: &str = "project-load-progress";
@@ -52,6 +53,8 @@ pub struct ImageEntry {
     pub height: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crop_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -78,6 +81,9 @@ fn open_project_sync(app: AppHandle, payload: OpenProjectPayload) -> Result<Vec<
 
     let canonical_root = root.canonicalize().map_err(|e| e.to_string())?;
     let ratings_data = load_ratings(&payload.root_path);
+    // Load once; a missing sidecar yields the empty default. A corrupt file only
+    // degrades to "no statuses" for display here — writers still refuse to clobber it.
+    let crop_status_data = load_crop_statuses(&payload.root_path).unwrap_or_default();
 
     // Phase 1: fast sequential walk to collect image paths (directory traversal
     // doesn't parallelize well; the per-file work below is what's expensive).
@@ -129,6 +135,8 @@ fn open_project_sync(app: AppHandle, payload: OpenProjectPayload) -> Result<Vec<
 
             let file_size = fs::metadata(path_buf).ok().map(|m| m.len()).filter(|&n| n > 0);
 
+            let crop_status = crop_status_data.statuses.get(&relative_path).cloned();
+
             let done = progress.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
             if done % 25 == 0 {
                 let _ = app.emit(PROGRESS_EVENT, ProjectLoadProgress { count: done });
@@ -145,6 +153,7 @@ fn open_project_sync(app: AppHandle, payload: OpenProjectPayload) -> Result<Vec<
                 width: if width > 0 { Some(width) } else { None },
                 height: if height > 0 { Some(height) } else { None },
                 file_size,
+                crop_status,
             })
         })
         .collect();

@@ -117,6 +117,64 @@ describe("selectVisibleImages", () => {
     });
   });
 
+  describe("crop status filter", () => {
+    const images = [
+      makeImage({ filename: "a.png", crop_status: "cropped" }),
+      makeImage({ filename: "b.png", crop_status: "uncropped" }),
+      makeImage({ filename: "c.png" }), // no crop_status entry
+      makeImage({ filename: "d.png", crop_status: "multi" }),
+    ];
+
+    it("keeps only the requested status", () => {
+      expect(
+        names(
+          selectVisibleImages(images, { ...baseFilter, cropStatusFilter: "cropped" })
+        )
+      ).toEqual(["a.png"]);
+      expect(
+        names(
+          selectVisibleImages(images, { ...baseFilter, cropStatusFilter: "multi" })
+        )
+      ).toEqual(["d.png"]);
+    });
+
+    it('treats a missing crop_status as "uncropped"', () => {
+      expect(
+        names(
+          selectVisibleImages(images, {
+            ...baseFilter,
+            cropStatusFilter: "uncropped",
+          })
+        )
+      ).toEqual(["b.png", "c.png"]);
+    });
+
+    it("null and omitted filter keep all images", () => {
+      expect(
+        selectVisibleImages(images, { ...baseFilter, cropStatusFilter: null })
+      ).toHaveLength(4);
+      // Plain FilterState (no cropStatusFilter field) stays backward compatible.
+      expect(selectVisibleImages(images, baseFilter)).toHaveLength(4);
+    });
+
+    it("composes with other filters", () => {
+      const mixed = [
+        makeImage({ filename: "a.png", crop_status: "cropped", rating: "good" }),
+        makeImage({ filename: "b.png", crop_status: "cropped", rating: "bad" }),
+        makeImage({ filename: "c.png", rating: "good" }),
+      ];
+      expect(
+        names(
+          selectVisibleImages(mixed, {
+            ...baseFilter,
+            cropStatusFilter: "cropped",
+            ratingFilter: "good",
+          })
+        )
+      ).toEqual(["a.png"]);
+    });
+  });
+
   describe("sorting", () => {
     it("name sort is numeric-aware (img2 before img10)", () => {
       const images = [

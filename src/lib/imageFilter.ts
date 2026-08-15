@@ -1,4 +1,14 @@
-import type { FilterState, ImageEntry } from "@/types";
+import type { CropStatus, FilterState, ImageEntry } from "@/types";
+
+/**
+ * Filter argument for {@link selectVisibleImages}. Extends the shared
+ * `FilterState` with an optional crop-status filter (an image with no
+ * `crop_status` counts as "uncropped"). The field is optional so existing
+ * callers that pass a plain `FilterState` keep working.
+ */
+export interface VisibleImagesFilter extends FilterState {
+  cropStatusFilter?: CropStatus | null;
+}
 
 /**
  * Pure filter + sort pipeline shared by the grid, tag editor, and preview/crop
@@ -6,11 +16,19 @@ import type { FilterState, ImageEntry } from "@/types";
  */
 export function selectVisibleImages(
   images: ImageEntry[],
-  filter: FilterState
+  filter: VisibleImagesFilter
 ): ImageEntry[] {
   const { showCaptioned, tagFilter, query, ratingFilter, sortBy, sortOrder } =
     filter;
+  const cropStatusFilter = filter.cropStatusFilter ?? null;
   let list = images;
+
+  // Crop-status filter (missing status counts as "uncropped")
+  if (cropStatusFilter) {
+    list = list.filter(
+      (img) => (img.crop_status ?? "uncropped") === cropStatusFilter
+    );
+  }
 
   // Caption filter
   if (showCaptioned === true) {

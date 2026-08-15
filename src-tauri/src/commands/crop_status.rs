@@ -24,7 +24,10 @@ fn crop_status_path(root_path: &str) -> PathBuf {
     PathBuf::from(root_path).join(CROP_STATUS_FILE)
 }
 
-fn load_crop_statuses(root_path: &str) -> Result<CropStatusData, String> {
+/// Load crop statuses from the sidecar (missing file yields the empty default;
+/// a present-but-unparsable file is an error). Crate-visible so `open_project`
+/// can populate `ImageEntry.crop_status`.
+pub(crate) fn load_crop_statuses(root_path: &str) -> Result<CropStatusData, String> {
     load_json_file(&crop_status_path(root_path))
 }
 

@@ -7,7 +7,6 @@ import {
   FlipHorizontal,
   FlipVertical,
   Loader2,
-  Check,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -20,6 +19,7 @@ import { useCropStore } from "@/stores/cropStore";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { cropImage, getImageDataUrl, detectFaces, multiCrop, setCropStatus } from "@/lib/tauri";
 import type { CropRect } from "@/lib/tauri";
+import type { ImageEntry } from "@/types";
 import { computeBuckets, BUILTIN_PROFILES } from "@/lib/buckets";
 import { selectVisibleImages } from "@/lib/imageFilter";
 
@@ -57,6 +57,7 @@ export function CropModal() {
   const ratingFilter = useFilterStore((s) => s.ratingFilter);
   const sortBy = useFilterStore((s) => s.sortBy);
   const sortOrder = useFilterStore((s) => s.sortOrder);
+  const cropStatusFilter = useFilterStore((s) => s.cropStatusFilter);
   const images = useMemo(
     () =>
       selectVisibleImages(allImages, {
@@ -66,8 +67,9 @@ export function CropModal() {
         ratingFilter,
         sortBy,
         sortOrder,
+        cropStatusFilter,
       }),
-    [allImages, showCaptioned, tagFilter, query, ratingFilter, sortBy, sortOrder]
+    [allImages, showCaptioned, tagFilter, query, ratingFilter, sortBy, sortOrder, cropStatusFilter]
   );
 
   const selectedProfile = useCropStore((s) => s.selectedProfile);
@@ -135,14 +137,22 @@ export function CropModal() {
   const [saveAsNew, setSaveAsNew] = useState(true);
   const [outputSize, setOutputSize] = useState<number | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
-  const [cropMode, setCropMode] = useState<"manual" | "center" | "face">("manual");
+  const [cropMode, setCropMode] = useState<"manual" | "face">("manual");
 
   const imageContainerRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const applyButtonRef = useRef<HTMLButtonElement>(null);
   const applyAndNextRef = useRef(false);
   const nextImageRef = useRef<typeof images[0] | null>(null);
   const isOpen = useUiStore((s) => s.isCropOpen);
   useFocusTrap(dialogRef, isOpen);
+
+  // The focus trap focuses the first focusable (the header close button);
+  // move focus to the Apply button instead. This effect runs after the trap's
+  // (it is declared later in the component), so it wins on open.
+  useEffect(() => {
+    if (isOpen) applyButtonRef.current?.focus();
+  }, [isOpen]);
 
   // Load image via backend (data URL) so it works without asset protocol
   const { data: imageSrc } = useQuery({
@@ -162,26 +172,44 @@ export function CropModal() {
 
   const detectedFaces = faces ?? [];
 
-  // Latest crop/image sizes for the face auto-center effect, so it does not
-  // need w/h in its deps (which would re-fire on every manual resize and snap
-  // the crop back onto the detected face).
-  const cropSizeRef = useRef({ w, h, imgWidth, imgHeight });
-  cropSizeRef.current = { w, h, imgWidth, imgHeight };
+  // Latest image size / lock state for the face auto-frame effect, so it does
+  // not need those values in its deps (which would re-fire on every manual
+  // change and snap the crop back onto the detected face).
+  const cropSizeRef = useRef({ imgWidth, imgHeight, fixed, aspectRatio });
+  cropSizeRef.current = { imgWidth, imgHeight, fixed, aspectRatio };
 
-  // Auto-center on largest face when detection results arrive
+  // Auto-frame the largest face (by area) when detection results arrive in
+  // face mode: a face-anchored box rather than a no-op recenter of the
+  // full-image default rect.
   useEffect(() => {
-    if (faces && faces.length > 0) {
-      const { w, h, imgWidth, imgHeight } = cropSizeRef.current;
-      const largest = faces[0]; // already sorted by confidence
-      const centerX = largest.x + largest.width / 2;
-      const centerY = largest.y + largest.height / 2;
-      // Position crop to center on face
-      const newX = Math.max(0, Math.floor(centerX - w / 2));
-      const newY = Math.max(0, Math.floor(centerY - h / 2));
-      setX(Math.min(newX, imgWidth - w));
-      setY(Math.min(newY, imgHeight - h));
-    }
-  }, [faces, selectedImage?.path]);
+    if (cropMode !== "face" || !faces || faces.length === 0) return;
+    const { imgWidth, imgHeight, fixed, aspectRatio } = cropSizeRef.current;
+    if (imgWidth <= 0 || imgHeight <= 0) return;
+    const largest = [...faces].sort(
+      (a, b) => b.width * b.height - a.width * a.height
+    )[0];
+    const centerX = largest.x + largest.width / 2;
+    const centerY = largest.y + largest.height / 2;
+    // Square side: 2.5x the face's larger dimension, clamped to [256, image].
+    const side = Math.min(
+      Math.max(Math.max(largest.width, largest.height) * 2.5, 256),
+      Math.min(imgWidth, imgHeight)
+    );
+    const cw = Math.max(1, Math.min(Math.round(side), imgWidth));
+    const ch = Math.max(
+      1,
+      Math.min(
+        Math.round(fixed && aspectRatio != null ? side / aspectRatio : side),
+        imgHeight
+      )
+    );
+    const nx = Math.max(0, Math.min(imgWidth - cw, Math.round(centerX - cw / 2)));
+    const ny = Math.max(0, Math.min(imgHeight - ch, Math.round(centerY - ch / 2)));
+    setX(nx);
+    setY(ny);
+    setW(cw);
+    setH(ch);
+  }, [faces, selectedImage?.path, cropMode]);
 
   // Reset state and set dimensions from entry when opening (use original image dimensions for crop)
   useEffect(() => {
@@ -211,7 +239,27 @@ export function CropModal() {
     setH((prev) => (prev > 0 ? prev : img.naturalHeight));
   }, []);
 
-  // Convert screen (clientX, clientY) to image coordinates
+  // --- Flip-aware coordinate mapping -------------------------------------
+  // The crop rect (x, y, w, h) is stored in ORIGINAL image coordinates: the
+  // backend crops the original first and applies flips/rotation afterwards.
+  // The preview <img> is rendered with CSS scaleX(-1)/scaleY(-1) when flipped,
+  // so all pointer interaction and overlay drawing happen in DISPLAY space
+  // (what the user sees) and are converted at the boundary:
+  //   display dx = flipX ? imgWidth  - x - w : x
+  //   display dy = flipY ? imgHeight - y - h : y
+  // (and the same formula converts back, since it is its own inverse).
+  // A rect framed over a feature in the mirrored preview therefore saves the
+  // original-space rect that contains that feature once the backend flip runs.
+  const toDisplayX = useCallback(
+    (ox: number, ow: number) => (flipX ? imgWidth - ox - ow : ox),
+    [flipX, imgWidth]
+  );
+  const toDisplayY = useCallback(
+    (oy: number, oh: number) => (flipY ? imgHeight - oy - oh : oy),
+    [flipY, imgHeight]
+  );
+
+  // Convert screen (clientX, clientY) to display-space image coordinates
   const screenToImage = useCallback(
     (clientX: number, clientY: number): { imgX: number; imgY: number } | null => {
       const el = imageContainerRef.current;
@@ -228,22 +276,25 @@ export function CropModal() {
     [imgWidth, imgHeight]
   );
 
-  // Get crop rect in screen coordinates for hit-testing
+  // Get crop rect in screen coordinates for hit-testing (display space, i.e.
+  // mirrored to match the flipped preview).
   const getCropScreenRect = useCallback(() => {
     const el = imageContainerRef.current;
     if (!el || imgWidth <= 0 || imgHeight <= 0) return null;
     const rect = el.getBoundingClientRect();
     const scaleX = rect.width / imgWidth;
     const scaleY = rect.height / imgHeight;
+    const dx = toDisplayX(x, w);
+    const dy = toDisplayY(y, h);
     return {
-      left: rect.left + x * scaleX,
-      top: rect.top + y * scaleY,
-      right: rect.left + (x + w) * scaleX,
-      bottom: rect.top + (y + h) * scaleY,
+      left: rect.left + dx * scaleX,
+      top: rect.top + dy * scaleY,
+      right: rect.left + (dx + w) * scaleX,
+      bottom: rect.top + (dy + h) * scaleY,
       width: w * scaleX,
       height: h * scaleY,
     };
-  }, [imgWidth, imgHeight, x, y, w, h]);
+  }, [imgWidth, imgHeight, x, y, w, h, toDisplayX, toDisplayY]);
 
   const hitTestHandle = useCallback(
     (clientX: number, clientY: number): ResizeHandle | null => {
@@ -281,18 +332,20 @@ export function CropModal() {
     [getCropScreenRect]
   );
 
+  // Takes a rect in DISPLAY space, clamps it to the image, and stores it in
+  // ORIGINAL space (mirrored back through the active flips).
   const applyCropFromInteraction = useCallback(
     (newX: number, newY: number, newW: number, newH: number) => {
-      const nx = Math.max(0, Math.min(imgWidth - 1, Math.round(newX)));
-      const ny = Math.max(0, Math.min(imgHeight - 1, Math.round(newY)));
-      const nw = Math.max(1, Math.min(imgWidth - nx, Math.round(newW)));
-      const nh = Math.max(1, Math.min(imgHeight - ny, Math.round(newH)));
-      setX(nx);
-      setY(ny);
+      const dx = Math.max(0, Math.min(imgWidth - 1, Math.round(newX)));
+      const dy = Math.max(0, Math.min(imgHeight - 1, Math.round(newY)));
+      const nw = Math.max(1, Math.min(imgWidth - dx, Math.round(newW)));
+      const nh = Math.max(1, Math.min(imgHeight - dy, Math.round(newH)));
+      setX(flipX ? imgWidth - dx - nw : dx);
+      setY(flipY ? imgHeight - dy - nh : dy);
       setW(nw);
       setH(nh);
     },
-    [imgWidth, imgHeight]
+    [imgWidth, imgHeight, flipX, flipY]
   );
 
   const handleImageMouseDown = useCallback(
@@ -306,6 +359,9 @@ export function CropModal() {
       if ("setPointerCapture" in target && "pointerId" in e.nativeEvent)
         target.setPointerCapture((e.nativeEvent as PointerEvent).pointerId);
       const { imgX, imgY } = coords;
+      // Drag state lives in display space; converted back on apply.
+      const dispX = toDisplayX(x, w);
+      const dispY = toDisplayY(y, h);
       const handle = hitTestHandle(e.clientX, e.clientY);
       if (handle) {
         setDragState({
@@ -313,8 +369,8 @@ export function CropModal() {
           handle,
           startImgX: imgX,
           startImgY: imgY,
-          startX: x,
-          startY: y,
+          startX: dispX,
+          startY: dispY,
           startW: w,
           startH: h,
         });
@@ -323,8 +379,8 @@ export function CropModal() {
           mode: "move",
           startImgX: imgX,
           startImgY: imgY,
-          startX: x,
-          startY: y,
+          startX: dispX,
+          startY: dispY,
           startW: w,
           startH: h,
         });
@@ -346,6 +402,8 @@ export function CropModal() {
       screenToImage,
       hitTestHandle,
       isInsideCrop,
+      toDisplayX,
+      toDisplayY,
       x,
       y,
       w,
@@ -362,12 +420,42 @@ export function CropModal() {
       const { mode, handle, startImgX, startImgY, startX, startY, startW, startH } =
         dragState;
 
+      // Effective locked ratio for draw/resize. When Lock Ratio is on without
+      // an explicit ratio, lock to the rect's ratio at drag start (1:1 when
+      // drawing a fresh rect).
+      const lockedRatio = fixed
+        ? aspectRatio ??
+          (mode !== "draw" && startH > 0 ? startW / startH : 1)
+        : null;
+
       if (mode === "draw") {
-        const nx = Math.min(startImgX, imgX);
-        const ny = Math.min(startImgY, imgY);
-        const nw = Math.max(1, Math.abs(imgX - startImgX));
-        const nh = Math.max(1, Math.abs(imgY - startImgY));
-        applyCropFromInteraction(nx, ny, nw, nh);
+        if (lockedRatio != null && lockedRatio > 0) {
+          // Ratio-locked draw: anchor at the drag origin, grow toward the
+          // pointer, keep w/h = ratio, shrink to fit the image bounds.
+          const r = lockedRatio;
+          const sx = imgX >= startImgX ? 1 : -1;
+          const sy = imgY >= startImgY ? 1 : -1;
+          const rawW = Math.abs(imgX - startImgX);
+          const rawH = Math.abs(imgY - startImgY);
+          const maxW = Math.min(
+            sx > 0 ? imgWidth - startImgX : startImgX,
+            (sy > 0 ? imgHeight - startImgY : startImgY) * r
+          );
+          const nw = Math.max(
+            1,
+            Math.min(Math.max(rawW, rawH * r), Math.max(1, maxW))
+          );
+          const nh = nw / r;
+          const nx = sx > 0 ? startImgX : startImgX - nw;
+          const ny = sy > 0 ? startImgY : startImgY - nh;
+          applyCropFromInteraction(nx, ny, nw, nh);
+        } else {
+          const nx = Math.min(startImgX, imgX);
+          const ny = Math.min(startImgY, imgY);
+          const nw = Math.max(1, Math.abs(imgX - startImgX));
+          const nh = Math.max(1, Math.abs(imgY - startImgY));
+          applyCropFromInteraction(nx, ny, nw, nh);
+        }
       } else if (mode === "move") {
         const dx = imgX - startImgX;
         const dy = imgY - startImgY;
@@ -375,9 +463,94 @@ export function CropModal() {
         let ny = startY + dy;
         nx = Math.max(0, Math.min(imgWidth - startW, nx));
         ny = Math.max(0, Math.min(imgHeight - startH, ny));
-        setX(Math.round(nx));
-        setY(Math.round(ny));
+        applyCropFromInteraction(nx, ny, startW, startH);
       } else if (mode === "resize" && handle) {
+        if (lockedRatio != null && lockedRatio > 0) {
+          // Ratio-locked resize: anchor at the opposite corner/edge, derive
+          // both dims from the pointer, clamp to bounds preserving the ratio.
+          const r = lockedRatio;
+          let nx: number, ny: number, nw: number, nh: number;
+          switch (handle) {
+            case "se": {
+              const ax = startX;
+              const ay = startY;
+              const maxW = Math.min(imgWidth - ax, (imgHeight - ay) * r);
+              nw = Math.min(Math.max(1, Math.max(imgX - ax, (imgY - ay) * r)), Math.max(1, maxW));
+              nh = nw / r;
+              nx = ax;
+              ny = ay;
+              break;
+            }
+            case "ne": {
+              const ax = startX;
+              const ay = startY + startH;
+              const maxW = Math.min(imgWidth - ax, ay * r);
+              nw = Math.min(Math.max(1, Math.max(imgX - ax, (ay - imgY) * r)), Math.max(1, maxW));
+              nh = nw / r;
+              nx = ax;
+              ny = ay - nh;
+              break;
+            }
+            case "sw": {
+              const ax = startX + startW;
+              const ay = startY;
+              const maxW = Math.min(ax, (imgHeight - ay) * r);
+              nw = Math.min(Math.max(1, Math.max(ax - imgX, (imgY - ay) * r)), Math.max(1, maxW));
+              nh = nw / r;
+              nx = ax - nw;
+              ny = ay;
+              break;
+            }
+            case "nw": {
+              const ax = startX + startW;
+              const ay = startY + startH;
+              const maxW = Math.min(ax, ay * r);
+              nw = Math.min(Math.max(1, Math.max(ax - imgX, (ay - imgY) * r)), Math.max(1, maxW));
+              nh = nw / r;
+              nx = ax - nw;
+              ny = ay - nh;
+              break;
+            }
+            case "e": {
+              const maxW = Math.min(imgWidth - startX, (imgHeight - startY) * r);
+              nw = Math.min(Math.max(1, imgX - startX), Math.max(1, maxW));
+              nh = nw / r;
+              nx = startX;
+              ny = startY;
+              break;
+            }
+            case "w": {
+              const ax = startX + startW;
+              const maxW = Math.min(ax, (imgHeight - startY) * r);
+              nw = Math.min(Math.max(1, ax - imgX), Math.max(1, maxW));
+              nh = nw / r;
+              nx = ax - nw;
+              ny = startY;
+              break;
+            }
+            case "s": {
+              const maxH = Math.min(imgHeight - startY, (imgWidth - startX) / r);
+              nh = Math.min(Math.max(1, imgY - startY), Math.max(1, maxH));
+              nw = nh * r;
+              nx = startX;
+              ny = startY;
+              break;
+            }
+            case "n": {
+              const ay = startY + startH;
+              const maxH = Math.min(ay, (imgWidth - startX) / r);
+              nh = Math.min(Math.max(1, ay - imgY), Math.max(1, maxH));
+              nw = nh * r;
+              nx = startX;
+              ny = ay - nh;
+              break;
+            }
+            default:
+              return;
+          }
+          applyCropFromInteraction(nx, ny, nw, nh);
+          return;
+        }
         let nx: number, ny: number, nw: number, nh: number;
         switch (handle) {
             case "nw":
@@ -455,6 +628,8 @@ export function CropModal() {
       applyCropFromInteraction,
       imgWidth,
       imgHeight,
+      fixed,
+      aspectRatio,
     ]
   );
 
@@ -520,6 +695,23 @@ export function CropModal() {
     }
   }, [queryClient, rootPath]);
 
+  // Drop cached thumbnails (any size) and preview data URLs for an image so
+  // views refetch fresh pixels after a crop touches the file on disk.
+  const invalidateImageArtifacts = useCallback(
+    (imagePath: string) => {
+      queryClient.invalidateQueries({
+        predicate: (q) => {
+          const key = q.queryKey;
+          return (
+            (key[0] === "thumbnail" && key[1] === imagePath) ||
+            (key[0] === "imageDataUrl" && key.includes(imagePath))
+          );
+        },
+      });
+    },
+    [queryClient]
+  );
+
   const cropMutation = useMutation({
     mutationFn: () =>
       cropImage({
@@ -541,6 +733,22 @@ export function CropModal() {
           await setCropStatus(rootPath, selectedImage.relative_path, "cropped");
         } catch (err) {
           showToast(err instanceof Error ? err.message : String(err));
+        }
+      }
+      if (selectedImage) {
+        invalidateImageArtifacts(selectedImage.path);
+        if (!saveAsNew && rootPath) {
+          // Overwrite crop changed the file's real dimensions: clear the
+          // cached ones so the dimension-backfill effect refetches them.
+          queryClient.setQueryData<ImageEntry[]>(
+            ["project", "images", rootPath],
+            (old) =>
+              old?.map((img) =>
+                img.path === selectedImage.path
+                  ? { ...img, width: undefined, height: undefined }
+                  : img
+              )
+          );
         }
       }
       invalidateProject();
@@ -570,6 +778,7 @@ export function CropModal() {
     w,
     h,
     cropMutation,
+    closeCrop,
   });
   keydownRef.current = {
     handlePrev,
@@ -580,15 +789,24 @@ export function CropModal() {
     w,
     h,
     cropMutation,
+    closeCrop,
   };
 
   useEffect(() => {
     if (!isOpen) return;
     function onKeyDown(e: KeyboardEvent) {
+      const { handlePrev, handleNext, applyAspectRatio, currentIndex, images, w, h, cropMutation, closeCrop } =
+        keydownRef.current;
+      if (e.key === "Escape") {
+        // Close only the crop modal; stop propagation (listener is in the
+        // capture phase) so the preview modal underneath stays open.
+        e.preventDefault();
+        e.stopPropagation();
+        closeCrop();
+        return;
+      }
       const target = e.target as HTMLElement;
       if (target.closest("input, textarea, select")) return;
-      const { handlePrev, handleNext, applyAspectRatio, currentIndex, images, w, h, cropMutation } =
-        keydownRef.current;
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         handlePrev();
@@ -597,6 +815,7 @@ export function CropModal() {
         handleNext();
       } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
+        if (cropMutation.isPending) return;
         applyAndNextRef.current = true;
         nextImageRef.current =
           currentIndex < images.length - 1 ? images[currentIndex + 1]! : null;
@@ -608,8 +827,10 @@ export function CropModal() {
         applyAspectRatio(1, w >= h ? "w" : "h");
       }
     }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    // Capture phase: runs before (and can suppress) the preview modal's and
+    // grid's bubble-phase window listeners for the same keydown.
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [isOpen]);
 
   const multiCropMutation = useMutation({
@@ -666,6 +887,7 @@ export function CropModal() {
           showToast(err instanceof Error ? err.message : String(err));
         }
       }
+      if (selectedImage) invalidateImageArtifacts(selectedImage.path);
       invalidateProject();
       closeCrop();
     },
@@ -710,20 +932,6 @@ export function CropModal() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                setCropMode("center");
-                handleCenterSquare();
-              }}
-              className={`px-3 py-1 text-sm rounded ${
-                cropMode === "center"
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-              }`}
-            >
-              Center
-            </button>
-            <button
-              type="button"
               onClick={() => setCropMode("face")}
               className={`px-3 py-1 text-sm rounded ${
                 cropMode === "face"
@@ -755,10 +963,13 @@ export function CropModal() {
                 onLoad={onImageLoad}
                 draggable={false}
                 style={{
+                  // Rotation is intentionally NOT previewed live (a CSS rotate
+                  // overflows the container and breaks coordinate mapping);
+                  // it is applied on save. Flips are previewed, with the crop
+                  // overlay and pointer mapping mirrored to match.
                   transform: [
                     flipX ? "scaleX(-1)" : "",
                     flipY ? "scaleY(-1)" : "",
-                    `rotate(${rotateDeg}deg)`,
                   ]
                     .filter(Boolean)
                     .join(" ") || undefined,
@@ -769,8 +980,8 @@ export function CropModal() {
                   <div
                     className="pointer-events-none absolute border-2 border-white/80 bg-black/30"
                     style={{
-                      left: `${(x / imgWidth) * 100}%`,
-                      top: `${(y / imgHeight) * 100}%`,
+                      left: `${(toDisplayX(x, w) / imgWidth) * 100}%`,
+                      top: `${(toDisplayY(y, h) / imgHeight) * 100}%`,
                       width: `${(w / imgWidth) * 100}%`,
                       height: `${(h / imgHeight) * 100}%`,
                     }}
@@ -778,10 +989,12 @@ export function CropModal() {
                   {/* Resize handles (visual only; hit-testing is by position on container) */}
                   {(["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const).map(
                     (handle) => {
-                      const leftPct = (x / imgWidth) * 100;
-                      const topPct = (y / imgHeight) * 100;
-                      const rightPct = ((x + w) / imgWidth) * 100;
-                      const bottomPct = ((y + h) / imgHeight) * 100;
+                      const dispX = toDisplayX(x, w);
+                      const dispY = toDisplayY(y, h);
+                      const leftPct = (dispX / imgWidth) * 100;
+                      const topPct = (dispY / imgHeight) * 100;
+                      const rightPct = ((dispX + w) / imgWidth) * 100;
+                      const bottomPct = ((dispY + h) / imgHeight) * 100;
                       const cx = (leftPct + rightPct) / 2;
                       const cy = (topPct + bottomPct) / 2;
                       let style: React.CSSProperties = {};
@@ -825,8 +1038,10 @@ export function CropModal() {
                       key={idx}
                       className="pointer-events-none absolute border-2 border-green-400 bg-green-400/10"
                       style={{
-                        left: `${(face.x / imgWidth) * 100}%`,
-                        top: `${(face.y / imgHeight) * 100}%`,
+                        // Faces are detected in original coordinates; mirror
+                        // them to land on the flipped preview.
+                        left: `${(toDisplayX(face.x, face.width) / imgWidth) * 100}%`,
+                        top: `${(toDisplayY(face.y, face.height) / imgHeight) * 100}%`,
                         width: `${(face.width / imgWidth) * 100}%`,
                         height: `${(face.height / imgHeight) * 100}%`,
                       }}
@@ -1040,11 +1255,20 @@ export function CropModal() {
             <button
               type="button"
               onClick={() => setRotateDeg((r) => (r + 90) % 360)}
-              className="flex items-center gap-1 rounded border border-border bg-surface px-2 py-1.5 text-sm text-gray-200 hover:bg-gray-700"
+              className={`flex items-center gap-1 rounded border px-2 py-1.5 text-sm ${
+                rotateDeg !== 0
+                  ? "border-blue-500 bg-blue-600/20 text-blue-300"
+                  : "border-border bg-surface text-gray-200 hover:bg-gray-700"
+              }`}
             >
               <RotateCw className="h-4 w-4" />
-              Rotate 90°
+              Rotate 90°{rotateDeg !== 0 ? ` (${rotateDeg}°)` : ""}
             </button>
+            {rotateDeg !== 0 && (
+              <span className="flex items-center rounded bg-blue-600/20 px-2 py-1 text-xs text-blue-200">
+                Rotation is applied on save
+              </span>
+            )}
             <button
               type="button"
               onClick={() => setFlipX((f) => !f)}
@@ -1069,6 +1293,7 @@ export function CropModal() {
 
           <div className="border-t border-border pt-4 space-y-2">
             <button
+              ref={applyButtonRef}
               type="button"
               onClick={() => cropMutation.mutate()}
               disabled={!w || !h || cropMutation.isPending}
@@ -1077,8 +1302,6 @@ export function CropModal() {
             >
               {cropMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
-              ) : cropMutation.isSuccess ? (
-                <Check className="h-4 w-4" />
               ) : (
                 <Crop className="h-4 w-4" />
               )}

@@ -272,6 +272,146 @@ pub async fn ensure_thumbnails_batch(payload: EnsureThumbnailsBatchPayload) -> R
 
 // ============ Original commands preserved for backward compat ============
 
+// ---- Shared crop pipeline helpers (used by crop_image, multi_crop, batch_resize) ----
+
+/// Read the EXIF Orientation tag (1..=8) from a file; 1 (normal) on any failure.
+fn read_exif_orientation(path: &Path) -> u32 {
+    (|| {
+        let file = fs::File::open(path).ok()?;
+        let mut reader = BufReader::new(file);
+        let exif = Reader::new().read_from_container(&mut reader).ok()?;
+        exif.get_field(Tag::Orientation, In::PRIMARY)
+            .and_then(|f| f.value.get_uint(0))
+    })()
+    .unwrap_or(1)
+}
+
+/// Apply the standard 8-case EXIF orientation transform so crops operate in
+/// display space rather than sensor space (phone photos are often stored rotated).
+fn apply_exif_orientation(img: DynamicImage, orientation: u32) -> DynamicImage {
+    match orientation {
+        2 => img.fliph(),
+        3 => img.rotate180(),
+        4 => img.flipv(),
+        5 => img.rotate90().fliph(),
+        6 => img.rotate90(),
+        7 => img.rotate270().fliph(),
+        8 => img.rotate270(),
+        _ => img,
+    }
+}
+
+/// Open an image and apply its EXIF orientation (for crop paths; the thumbnail
+/// pipeline intentionally does not go through here).
+fn open_oriented(path: &Path) -> Result<DynamicImage, String> {
+    let img = image::open(path).map_err(|e| e.to_string())?;
+    Ok(apply_exif_orientation(img, read_exif_orientation(path)))
+}
+
+/// Resize to a square training size with Lanczos3, but never upscale: if the
+/// longest side already fits within `output_size`, the image is returned as-is.
+fn resize_for_output(img: DynamicImage, output_size: Option<u32>) -> DynamicImage {
+    if let Some(sz) = output_size.filter(|&s| (64..=2048).contains(&s)) {
+        let longest = img.width().max(img.height());
+        if longest > sz {
+            return img.resize(sz, sz, FilterType::Lanczos3);
+        }
+    }
+    img
+}
+
+/// Crop (clamped to image bounds), then flip/rotate, then optional no-upscale
+/// resize. Keeps the image in its native color type so alpha is preserved.
+/// Returns None when the clamped crop region has zero size.
+#[allow(clippy::too_many_arguments)]
+fn process_crop(
+    img: &DynamicImage,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    flip_x: bool,
+    flip_y: bool,
+    rotate_degrees: i32,
+    output_size: Option<u32>,
+) -> Option<DynamicImage> {
+    let (w, h) = (img.width(), img.height());
+    let x = x.min(w.saturating_sub(1));
+    let y = y.min(h.saturating_sub(1));
+    let cw = width.min(w.saturating_sub(x));
+    let ch = height.min(h.saturating_sub(y));
+    if cw == 0 || ch == 0 {
+        return None;
+    }
+
+    // Crop first (in image coordinates), then apply flip/rotate to the cropped result
+    let mut out = img.crop_imm(x, y, cw, ch);
+
+    if flip_x {
+        out = out.fliph();
+    }
+    if flip_y {
+        out = out.flipv();
+    }
+
+    let rot = ((rotate_degrees % 360 + 360) % 360) / 90;
+    for _ in 0..rot {
+        out = out.rotate90();
+    }
+
+    Some(resize_for_output(out, output_size))
+}
+
+/// Write a processed image. JPEG is encoded explicitly at quality 92 (and
+/// converted to RGB only there, since JPEG cannot carry alpha); every other
+/// format keeps the native color type via `write_to`.
+fn write_cropped(img: &DynamicImage, out_path: &Path, format: ImageFormat) -> Result<(), String> {
+    let file = std::fs::File::create(out_path).map_err(|e| e.to_string())?;
+    let mut writer = std::io::BufWriter::new(file);
+    if format == ImageFormat::Jpeg {
+        let rgb = img.to_rgb8();
+        let mut enc = JpegEncoder::new_with_quality(&mut writer, 92);
+        enc.encode(
+            rgb.as_raw(),
+            rgb.width(),
+            rgb.height(),
+            image::ExtendedColorType::Rgb8,
+        )
+        .map_err(|e| e.to_string())
+    } else {
+        img.write_to(&mut writer, format).map_err(|e| e.to_string())
+    }
+}
+
+/// Find a non-existing output path by trying `name_for(start)`, `name_for(start+1)`, ...
+fn unique_output_path(
+    parent: &Path,
+    start: u32,
+    mut name_for: impl FnMut(u32) -> String,
+) -> Result<PathBuf, String> {
+    let mut n = start;
+    loop {
+        let candidate = parent.join(name_for(n));
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+        n += 1;
+        if n > 9999 {
+            return Err("Could not create unique filename for new image".to_string());
+        }
+    }
+}
+
+/// Copy the source image's caption sidecar (trimmed) to the output image, if present.
+fn copy_caption_sidecar(src_image: &Path, dst_image: &Path) {
+    let caption_path = caption_path_for(src_image);
+    if caption_path.exists() {
+        if let Ok(content) = fs::read_to_string(&caption_path) {
+            let _ = fs::write(caption_path_for(dst_image), content.trim());
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CropImagePayload {
     pub image_path: String,
@@ -357,38 +497,20 @@ fn crop_image_sync(payload: CropImagePayload) -> Result<Option<String>, String> 
         return Err("Image file not found".to_string());
     }
 
-    let img = image::open(&path).map_err(|e| e.to_string())?;
+    let img = open_oriented(&path)?;
 
-    let (w, h) = (img.width(), img.height());
-    let x = payload.x.min(w.saturating_sub(1));
-    let y = payload.y.min(h.saturating_sub(1));
-    let cw = payload.width.min(w.saturating_sub(x));
-    let ch = payload.height.min(h.saturating_sub(y));
-
-    if cw == 0 || ch == 0 {
-        return Err("Crop region has zero size".to_string());
-    }
-
-    // Crop first (in original image coordinates), then apply flip/rotate to the cropped result
-    let cropped_sub = img.crop_imm(x, y, cw, ch);
-    let mut out_img = image::DynamicImage::from(cropped_sub.to_rgb8());
-
-    if payload.flip_x {
-        out_img = out_img.fliph();
-    }
-    if payload.flip_y {
-        out_img = out_img.flipv();
-    }
-
-    let rot = ((payload.rotate_degrees % 360 + 360) % 360) / 90;
-    for _ in 0..rot {
-        out_img = out_img.rotate90();
-    }
-
-    // Optional: resize to training size (square) for LoRA
-    if let Some(sz) = payload.output_size.filter(|&s| s >= 64 && s <= 2048) {
-        out_img = out_img.resize(sz, sz, FilterType::Triangle);
-    }
+    let out_img = process_crop(
+        &img,
+        payload.x,
+        payload.y,
+        payload.width,
+        payload.height,
+        payload.flip_x,
+        payload.flip_y,
+        payload.rotate_degrees,
+        payload.output_size,
+    )
+    .ok_or_else(|| "Crop region has zero size".to_string())?;
 
     let format = ImageFormat::from_path(&path).unwrap_or(ImageFormat::Png);
     let ext = path
@@ -398,38 +520,16 @@ fn crop_image_sync(payload: CropImagePayload) -> Result<Option<String>, String> 
     let out_path: PathBuf = if payload.save_as_new {
         let parent = path.parent().unwrap_or_else(|| path.as_path());
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("image");
-        let mut n = 1u32;
-        loop {
-            let name = format!("{}_{}_crop.{}", stem, n, ext);
-            let candidate = parent.join(&name);
-            if !candidate.exists() {
-                break candidate;
-            }
-            n += 1;
-            if n > 9999 {
-                return Err("Could not create unique filename for new image".to_string());
-            }
-        }
+        unique_output_path(parent, 1, |n| format!("{}_{}_crop.{}", stem, n, ext))?
     } else {
         path.clone()
     };
 
-    let mut file = std::io::BufWriter::new(
-        std::fs::File::create(&out_path).map_err(|e| e.to_string())?,
-    );
-    out_img
-        .write_to(&mut file, format)
-        .map_err(|e| e.to_string())?;
+    write_cropped(&out_img, &out_path, format)?;
 
     // When saving as new, copy the source caption to the new image so LoRA workflow keeps tags
     if payload.save_as_new {
-        let caption_path = caption_path_for(&path);
-        if caption_path.exists() {
-            if let Ok(content) = fs::read_to_string(&caption_path) {
-                let out_txt = caption_path_for(&out_path);
-                let _ = fs::write(out_txt, content.trim());
-            }
-        }
+        copy_caption_sidecar(&path, &out_path);
     }
 
     Ok(if payload.save_as_new {
@@ -510,15 +610,18 @@ fn batch_resize_sync(payload: BatchResizePayload) -> Result<BatchResizeResult, S
 
         let (w, h) = (img.width(), img.height());
         let out_img_dyn: image::DynamicImage = match &payload.mode {
-            BatchResizeMode::Resize => img.resize(target, target, FilterType::Triangle),
+            BatchResizeMode::Resize => img.resize(target, target, FilterType::Lanczos3),
             BatchResizeMode::CenterCrop => {
-                let min_side = w.min(h);
-                let crop_size = min_side.min(target);
+                // Crop the FULL center square (side = min(w, h)), then resize to target.
+                let crop_size = w.min(h);
                 let x = (w - crop_size) / 2;
                 let y = (h - crop_size) / 2;
                 let cropped = img.crop_imm(x, y, crop_size, crop_size);
-                let cropped_dyn = image::DynamicImage::from(cropped.to_rgb8());
-                cropped_dyn.resize(target, target, FilterType::Triangle)
+                if crop_size == target {
+                    cropped
+                } else {
+                    cropped.resize(target, target, FilterType::Lanczos3)
+                }
             }
             BatchResizeMode::Fit => {
                 let longest = w.max(h);
@@ -528,14 +631,13 @@ fn batch_resize_sync(payload: BatchResizePayload) -> Result<BatchResizeResult, S
                     let scale = target as f32 / longest as f32;
                     let new_w = (w as f32 * scale).round() as u32;
                     let new_h = (h as f32 * scale).round() as u32;
-                    img.resize(new_w, new_h, FilterType::Triangle)
+                    img.resize(new_w, new_h, FilterType::Lanczos3)
                 }
             }
         };
 
         let format = ImageFormat::from_path(&path).unwrap_or(ImageFormat::Png);
-        let mut out_file = fs::File::create(&out_img).map_err(|e| e.to_string())?;
-        if out_img_dyn.write_to(&mut out_file, format).is_err() {
+        if write_cropped(&out_img_dyn, &out_img, format).is_err() {
             skipped += 1;
             continue;
         }
@@ -567,6 +669,10 @@ fn delete_image_file(image_path: &str) -> Result<(), String> {
     if !path.exists() || !path.is_file() {
         return Err("Image file not found".to_string());
     }
+    // NOTE: the image's crop_status.json entry is not pruned here — this function
+    // only receives the absolute image path, not the project root needed to locate
+    // the `.lora-studio/crop_status.json` sidecar. Stale entries are harmless
+    // (lookups are keyed by existing images) and get dropped on clear-all.
     std::fs::remove_file(&path).map_err(|e| e.to_string())?;
     let txt_path = caption_path_for(&path);
     if txt_path.exists() && txt_path.is_file() {
@@ -653,8 +759,7 @@ fn multi_crop_sync(payload: MultiCropPayload) -> Result<Vec<String>, String> {
         return Err("Image file not found".to_string());
     }
 
-    let img = image::open(&path).map_err(|e| e.to_string())?;
-    let (img_w, img_h) = (img.width(), img.height());
+    let img = open_oriented(&path)?;
     let format = ImageFormat::from_path(&path).unwrap_or(ImageFormat::Png);
     let ext = path
         .extension()
@@ -666,52 +771,34 @@ fn multi_crop_sync(payload: MultiCropPayload) -> Result<Vec<String>, String> {
     let mut output_paths = Vec::new();
 
     for crop in &payload.crops {
-        let x = crop.x.min(img_w.saturating_sub(1));
-        let y = crop.y.min(img_h.saturating_sub(1));
-        let cw = crop.width.min(img_w.saturating_sub(x));
-        let ch = crop.height.min(img_h.saturating_sub(y));
+        let out_img = match process_crop(
+            &img,
+            crop.x,
+            crop.y,
+            crop.width,
+            crop.height,
+            payload.flip_x,
+            payload.flip_y,
+            payload.rotate_degrees,
+            payload.output_size,
+        ) {
+            Some(i) => i,
+            None => continue, // skip invalid crops
+        };
 
-        if cw == 0 || ch == 0 {
-            continue; // skip invalid crops
-        }
+        // Never clobber existing files: {stem}{suffix}.{ext}, then {stem}{suffix}_1.{ext}, ...
+        let out_path = unique_output_path(parent, 0, |n| {
+            if n == 0 {
+                format!("{}{}.{}", stem, crop.suffix, ext)
+            } else {
+                format!("{}{}_{}.{}", stem, crop.suffix, n, ext)
+            }
+        })?;
 
-        let cropped_sub = img.crop_imm(x, y, cw, ch);
-        let mut out_img = image::DynamicImage::from(cropped_sub.to_rgb8());
-
-        if payload.flip_x {
-            out_img = out_img.fliph();
-        }
-        if payload.flip_y {
-            out_img = out_img.flipv();
-        }
-
-        let rot = ((payload.rotate_degrees % 360 + 360) % 360) / 90;
-        for _ in 0..rot {
-            out_img = out_img.rotate90();
-        }
-
-        if let Some(sz) = payload.output_size.filter(|&s| s >= 64 && s <= 2048) {
-            out_img = out_img.resize(sz, sz, FilterType::Triangle);
-        }
-
-        let out_name = format!("{}{}.{}", stem, crop.suffix, ext);
-        let out_path = parent.join(&out_name);
-
-        let mut file = std::io::BufWriter::new(
-            std::fs::File::create(&out_path).map_err(|e| e.to_string())?,
-        );
-        out_img
-            .write_to(&mut file, format)
-            .map_err(|e| e.to_string())?;
+        write_cropped(&out_img, &out_path, format)?;
 
         // Copy caption to new file with suffix
-        let caption_path = caption_path_for(&path);
-        if caption_path.exists() {
-            if let Ok(content) = fs::read_to_string(&caption_path) {
-                let out_txt = caption_path_for(&out_path);
-                let _ = fs::write(out_txt, content.trim());
-            }
-        }
+        copy_caption_sidecar(&path, &out_path);
 
         output_paths.push(out_path.to_string_lossy().into_owned());
     }

@@ -1,9 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSelectionStore } from "@/stores/selectionStore";
-import { loadProject, loadImageDimensions, getCropStatuses } from "@/lib/tauri";
-import type { CropStatus, ImageEntry } from "@/types";
+import { loadProject, loadImageDimensions } from "@/lib/tauri";
+import type { ImageEntry } from "@/types";
 
 /** How many images to request dimensions for per backend round-trip. */
 const DIMENSION_CHUNK = 200;
@@ -56,38 +56,8 @@ export function useProjectImages() {
     }
   }, [reconcileData]);
 
-  // Merge persisted crop statuses into the cached image list once per project
-  // (open_project doesn't read the crop_status sidecar).
-  const cropStatusRootRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!rootPath || !query.isSuccess) return;
-    if (cropStatusRootRef.current === rootPath) return;
-    cropStatusRootRef.current = rootPath;
-    let cancelled = false;
-    getCropStatuses(rootPath)
-      .then((statuses) => {
-        if (cancelled || Object.keys(statuses).length === 0) return;
-        queryClient.setQueryData<ImageEntry[]>(
-          ["project", "images", rootPath],
-          (old) =>
-            old?.map((img) => {
-              const status = statuses[img.relative_path];
-              return status
-                ? { ...img, crop_status: status as CropStatus }
-                : img;
-            })
-        );
-      })
-      .catch(() => {
-        // Allow a retry on the next successful load of this project.
-        if (cropStatusRootRef.current === rootPath) {
-          cropStatusRootRef.current = null;
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [rootPath, query.isSuccess, queryClient]);
+  // Crop statuses arrive on each ImageEntry directly from open_project; no
+  // client-side merge is needed.
 
   // Backfill image dimensions in the background (project scan skips them for speed).
   // Powers the dimension display in cells and "sort by dimension".

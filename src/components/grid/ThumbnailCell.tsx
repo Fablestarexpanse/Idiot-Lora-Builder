@@ -353,12 +353,7 @@ export const ThumbnailCell = memo(function ThumbnailCell({
           rootPath,
         ]) ?? [];
       const filter = useFilterStore.getState();
-      const base = filter.cropStatusFilter
-        ? allImages.filter(
-            (img) => (img.crop_status ?? "uncropped") === filter.cropStatusFilter
-          )
-        : allImages;
-      const visible = selectVisibleImages(base, filter);
+      const visible = selectVisibleImages(allImages, filter);
       const anchorIndex = visible.findIndex(
         (img) => img.id === selection.lastClickedId
       );
