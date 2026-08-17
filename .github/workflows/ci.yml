@@ -62,6 +62,11 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # tauri::generate_context! panics if frontendDist (../dist) is missing;
+      # this job doesn't build the frontend, so provide an empty placeholder.
+      - name: Create frontendDist placeholder
+        run: mkdir -p dist
+
       - name: Check Rust
         run: cargo check --manifest-path src-tauri/Cargo.toml
 
