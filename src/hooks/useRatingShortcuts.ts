@@ -1,5 +1,4 @@
-import { useEffect, useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { setImageRating, setRatingsBatch } from "@/lib/tauri";
@@ -12,108 +11,94 @@ const KEY_TO_RATING: Record<string, ImageRating> = {
   "3": "needs_edit",
 };
 
-function isTypingInInput(): boolean {
-  const el = document.activeElement;
-  if (!el || typeof el.tagName !== "string") return false;
-  const tag = el.tagName.toUpperCase();
-  if (tag === "INPUT" || tag === "TEXTAREA") return true;
-  return (el as HTMLElement).isContentEditable === true;
-}
-
 /**
- * Registers a global keydown listener in the capture phase so 1/2/3 always set
- * the current image rating (Good / Bad / Needs Edit). Toggle off if same key again.
- * Capture phase ensures this runs before any other handler (grid, modals, etc.).
+ * Handles the 1/2/3 rating keys (Good / Bad / Needs Edit; press again to
+ * toggle off). Called from the single global keydown listener in
+ * `useGlobalShortcuts` — the caller is responsible for the typing-target
+ * guard. Returns true when the event was consumed.
  */
-export function useRatingShortcuts(): void {
-  const queryClient = useQueryClient();
-  const queryClientRef = useRef(queryClient);
-  queryClientRef.current = queryClient;
+export function handleRatingShortcut(
+  e: KeyboardEvent,
+  queryClient: QueryClient
+): boolean {
+  if (!RATING_KEYS.includes(e.key as "1" | "2" | "3")) return false;
+  if (e.ctrlKey || e.metaKey || e.altKey) return false;
 
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent): void {
-      if (!RATING_KEYS.includes(e.key as "1" | "2" | "3")) return;
-      if (isTypingInInput()) return;
+  const { selectedImage, selectedIds } = useSelectionStore.getState();
+  const rootPath = useProjectStore.getState().rootPath;
+  if (!rootPath) return false;
 
-      const { selectedImage, selectedIds } = useSelectionStore.getState();
-      const rootPath = useProjectStore.getState().rootPath;
-      if (!rootPath) return;
+  // Multi-select: apply the rating to every selected image in one batch.
+  if (selectedIds.size > 0) {
+    const images = queryClient.getQueryData<ImageEntry[]>([
+      "project",
+      "images",
+      rootPath,
+    ]);
+    const targets = images?.filter((img) => selectedIds.has(img.id)) ?? [];
+    if (targets.length === 0) return false;
 
-      // Multi-select: apply the rating to every selected image in one batch.
-      if (selectedIds.size > 0) {
-        const images = queryClientRef.current.getQueryData<ImageEntry[]>([
-          "project",
-          "images",
-          rootPath,
-        ]);
-        const targets = images?.filter((img) => selectedIds.has(img.id)) ?? [];
-        if (targets.length === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
 
-        e.preventDefault();
-        e.stopPropagation();
+    const rating = KEY_TO_RATING[e.key];
+    // Toggle semantics: if every selected image already has this rating,
+    // clear them all instead.
+    const newRating: ImageRating = targets.every(
+      (img) => img.rating === rating
+    )
+      ? "none"
+      : rating;
 
-        const rating = KEY_TO_RATING[e.key];
-        // Toggle semantics: if every selected image already has this rating,
-        // clear them all instead.
-        const newRating: ImageRating = targets.every(
-          (img) => img.rating === rating
-        )
-          ? "none"
-          : rating;
+    setRatingsBatch(
+      rootPath,
+      targets.map((img) => ({
+        relative_path: img.relative_path,
+        rating: newRating,
+      }))
+    )
+      .then(() => {
+        queryClient.setQueryData<ImageEntry[]>(
+          ["project", "images", rootPath],
+          (old) =>
+            old?.map((img) =>
+              selectedIds.has(img.id) ? { ...img, rating: newRating } : img
+            )
+        );
+        const current = useSelectionStore.getState().selectedImage;
+        if (current && selectedIds.has(current.id)) {
+          useSelectionStore
+            .getState()
+            .setSelectedImage({ ...current, rating: newRating });
+        }
+      })
+      .catch((err) => {
+        console.error("Batch rating shortcut failed:", err);
+      });
+    return true;
+  }
 
-        setRatingsBatch(
-          rootPath,
-          targets.map((img) => ({
-            relative_path: img.relative_path,
-            rating: newRating,
-          }))
-        )
-          .then(() => {
-            queryClientRef.current.setQueryData<ImageEntry[]>(
-              ["project", "images", rootPath],
-              (old) =>
-                old?.map((img) =>
-                  selectedIds.has(img.id) ? { ...img, rating: newRating } : img
-                )
-            );
-            const current = useSelectionStore.getState().selectedImage;
-            if (current && selectedIds.has(current.id)) {
-              useSelectionStore
-                .getState()
-                .setSelectedImage({ ...current, rating: newRating });
-            }
-          })
-          .catch((err) => {
-            console.error("Batch rating shortcut failed:", err);
-          });
-        return;
-      }
+  if (!selectedImage) return false;
 
-      if (!selectedImage) return;
+  e.preventDefault();
+  e.stopPropagation();
 
-      e.preventDefault();
-      e.stopPropagation();
+  const rating = KEY_TO_RATING[e.key];
+  const newRating: ImageRating =
+    selectedImage.rating === rating ? "none" : rating;
 
-      const rating = KEY_TO_RATING[e.key];
-      const newRating: ImageRating =
-        selectedImage.rating === rating ? "none" : rating;
-
-      setImageRating(rootPath, selectedImage.relative_path, newRating)
-        .then(() => {
-          queryClientRef.current.invalidateQueries({
-            queryKey: ["project", "images", rootPath],
-          });
-          useSelectionStore.getState().setSelectedImage({
-            ...selectedImage,
-            rating: newRating,
-          });
-        })
-        .catch((err) => {
-          console.error("Rating shortcut failed:", err);
-        });
-    }
-
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, []);
+  setImageRating(rootPath, selectedImage.relative_path, newRating)
+    .then(() => {
+      queryClient.invalidateQueries({
+        queryKey: ["project", "images", rootPath],
+      });
+      useSelectionStore.getState().setSelectedImage({
+        ...selectedImage,
+        rating: newRating,
+      });
+    })
+    .catch((err) => {
+      console.error("Rating shortcut failed:", err);
+    });
+  return true;
 }

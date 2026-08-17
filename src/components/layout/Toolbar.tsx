@@ -20,6 +20,9 @@ export function Toolbar() {
   const setIsLoadingProject = useProjectStore((s) => s.setIsLoadingProject);
   const setLastOpenedFolder = useProjectStore((s) => s.setLastOpenedFolder);
   const showToast = useUiStore((s) => s.showToast);
+  const isHelpOpen = useUiStore((s) => s.isHelpOpen);
+  const openHelp = useUiStore((s) => s.openHelp);
+  const closeHelp = useUiStore((s) => s.closeHelp);
   const selectedImage = useSelectionStore((s) => s.selectedImage);
   const fizgigPath = useSettingsStore((s) => s.fizgigPath);
 
@@ -38,7 +41,6 @@ export function Toolbar() {
   const [showClearAllTags, setShowClearAllTags] = useState(false);
   const [showClearAllRatings, setShowClearAllRatings] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [showSendToFizgig, setShowSendToFizgig] = useState(false);
 
   function handleSendToFizgig() {
@@ -168,8 +170,9 @@ export function Toolbar() {
         <button
           type="button"
           className="rounded p-2 text-gray-400 hover:bg-white/10 hover:text-gray-200"
-          aria-label="Help"
-          onClick={() => setShowHelp(true)}
+          aria-label="Help (press ?)"
+          title="Keyboard shortcuts (?)"
+          onClick={openHelp}
         >
           <HelpCircle className="h-4 w-4" />
         </button>
@@ -201,7 +204,7 @@ export function Toolbar() {
         onClose={() => setShowSendToFizgig(false)}
       />
       <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
-      <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
+      <HelpModal isOpen={isHelpOpen} onClose={closeHelp} />
     </>
   );
 }

@@ -1,17 +1,9 @@
 import { create } from "zustand";
 
-export interface SearchReplaceBatchItem {
-  path: string;
-  previousTags: string[];
-  newTags: string[];
-}
+// Batch undo lives in historyStore (entries with multiple items), so
+// search & replace shares the same Ctrl+Z stack as single tag edits.
 
 interface SearchReplaceState {
-  /** Last batch of search-replace changes for undo */
-  lastBatch: SearchReplaceBatchItem[] | null;
-  pushBatch: (batch: SearchReplaceBatchItem[]) => void;
-  clearLastBatch: () => void;
-
   /** Current search text for live highlighting in tags */
   searchHighlightText: string;
   setSearchHighlightText: (text: string) => void;
@@ -27,10 +19,6 @@ interface SearchReplaceState {
 }
 
 export const useSearchReplaceStore = create<SearchReplaceState>((set) => ({
-  lastBatch: null,
-  pushBatch: (batch) => set({ lastBatch: batch }),
-  clearLastBatch: () => set({ lastBatch: null }),
-
   searchHighlightText: "",
   setSearchHighlightText: (text) => set({ searchHighlightText: text }),
 

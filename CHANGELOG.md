@@ -3,10 +3,37 @@
 All notable changes to Idiot LoRa Builder (formerly LoRA Dataset Studio) are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.7.0] - 2026-08-17
+
+Renamed to **Idiot LoRa Builder** (new unicorn logo, app icon, window title;
+formerly LoRA Dataset Studio). Double-click `install.bat` / `run.bat`
+launchers added for easy setup on Windows.
 
 ### Added
 
+- **Crop tool rebuilt for LoRA prep.** Bucket chips now set *ratio* (largest
+  fitting box, anchored on the detected face) instead of tiny absolute-pixel
+  patches; a live readout shows the crop's ratio, its nearest bucket for your
+  trainer profile, and whether the trainer would upscale it; output sizing is
+  honest (keep original / fit longest side); multi-crop is now three
+  toggleable face-aware framings (full / waist-up / face close-up); new SD 3.5
+  and Illustrious/Pony profiles plus save-your-own custom profiles.
+- **kohya (sd-scripts) export preset**: `<N>_<concept>/` repeat-count folder
+  layout with optional generated `dataset.toml` built from your selected
+  trainer profile's bucket config.
+- **Dataset stats upgrades**: clickable top-20 tag frequency (filters the
+  grid), rating breakdown, dataset size on disk, and a correct
+  divisible-by-64 dimension warning.
+- **Working `?` shortcut** opens keyboard help (was documented but never
+  implemented); shortcuts are handled by one central keymap.
+- **Success toasts** with a small queue — long operations now confirm
+  consistently instead of only surfacing errors.
+- **Unified undo**: search & replace, add-tag-to-all, and trigger-word batch
+  edits now share the same Ctrl+Z history as single tag edits — one keystroke
+  reverts a whole batch.
+- **Logging**: failures in the captioner, model downloads, exports, and
+  sidecar persistence are written to a log file (Settings → About → Open log
+  folder).
 - **Batch operations on multi-select**: Shift+Click range select, Ctrl+A
   select-all-visible, Escape clears selection; pressing 1/2/3 with a
   multi-selection rates every selected image at once; a Delete button in the
@@ -33,13 +60,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Crop correctness**: flipped previews now crop exactly what you framed
+  (coordinates were mirrored); crop statuses no longer vanish after each crop;
+  thumbnails refresh immediately after cropping; aspect lock holds while
+  dragging; outputs use Lanczos resampling at JPEG quality 92, preserve
+  transparency, honor EXIF orientation, and never upscale; batch-resize
+  center-crop no longer zooms into a tiny center patch.
 - AI-generated captions (single and batch) now keep the configured trigger
   word as the first tag; previously it was silently dropped until the caption
   was manually edited.
 - "Send to Fizgig" failed silently due to Windows `start` command quoting;
   Fizgig now launches reliably in its own console window.
 - The test suite's component tests never ran (config excluded .tsx and lacked
-  a DOM environment); fixed, and test coverage expanded from 18 to 99 tests.
+  a DOM environment); fixed. Coverage grew from 18 frontend tests to 167,
+  plus the codebase's first 47 Rust tests (export path traversal, atomic
+  sidecar persistence, rename collision checks, crop math).
+- CI's Rust job referenced a nonexistent GitHub action and had failed since
+  creation; repaired, with Tauri Linux deps, caching, and `cargo test`.
 
 ## [0.6.0] - 2026-08-11
 

@@ -7,6 +7,7 @@ interface HelpModalProps {
 }
 
 const shortcuts = [
+  { key: "?", action: "Show this help (Shift+/)" },
   { key: "←→↑↓", action: "Navigate image grid" },
   { key: "Home / End", action: "Jump to first / last image" },
   { key: "Ctrl+Click", action: "Multi-select images" },
@@ -16,7 +17,7 @@ const shortcuts = [
   { key: "Enter / Double-click", action: "Open image in preview" },
   { key: "Space", action: "Select the focused tile" },
   { key: "T", action: "Focus tag input" },
-  { key: "Ctrl+Z", action: "Undo last tag change" },
+  { key: "Ctrl+Z", action: "Undo last tag change or batch edit" },
   { key: "Ctrl+Y / Ctrl+Shift+Z", action: "Redo" },
   { key: "1 / 2 / 3", action: "Rate Good / Bad / Needs Edit (whole selection when multi-selected)" },
   { key: "+ / −", action: "Zoom in / out (in preview)" },

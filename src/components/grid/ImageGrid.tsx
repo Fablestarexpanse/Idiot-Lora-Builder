@@ -2,6 +2,7 @@ import { useRef, useEffect, useLayoutEffect, useMemo, useState, memo } from "rea
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useQueryClient } from "@tanstack/react-query";
 import { useProjectImages } from "@/hooks/useProject";
+import { isTypingTarget } from "@/hooks/useGlobalShortcuts";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useAiStore } from "@/stores/aiStore";
@@ -253,13 +254,10 @@ export const ImageGrid = memo(function ImageGrid() {
     fallbackThumbEdge,
   ]);
 
-  // Keyboard navigation (1/2/3 rating is handled globally in App via useRatingShortcuts)
+  // Keyboard navigation (1/2/3 rating and "?" are handled globally in App via useGlobalShortcuts)
   useEffect(() => {
     const handleKeyNav = (e: KeyboardEvent) => {
-      if (
-        document.activeElement?.tagName === "INPUT" ||
-        document.activeElement?.tagName === "TEXTAREA"
-      ) {
+      if (isTypingTarget(document.activeElement)) {
         return;
       }
 

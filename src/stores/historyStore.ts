@@ -1,12 +1,21 @@
 import { create } from "zustand";
 import { writeCaption } from "@/lib/tauri";
 
-export interface HistoryEntry {
-  id: string;
+/** One image's before/after tags within a history entry. */
+export interface HistoryItem {
   imagePath: string;
-  imageFilename: string;
   previousTags: string[];
   newTags: string[];
+}
+
+/**
+ * A single undoable action. Single-image edits are one-item arrays; batch
+ * operations (search & replace, add-tag-to-all, trigger word) carry every
+ * affected image so one Ctrl+Z reverts the whole batch.
+ */
+export interface HistoryEntry {
+  id: string;
+  items: HistoryItem[];
   timestamp: number;
   description: string;
 }
@@ -36,6 +45,7 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   maxHistory: 100,
 
   pushHistory: (entry) => {
+    if (entry.items.length === 0) return;
     const fullEntry: HistoryEntry = {
       ...entry,
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -54,8 +64,10 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
 
     const entry = past[past.length - 1];
 
-    // Restore previous tags
-    await writeCaption(entry.imagePath, entry.previousTags);
+    // Restore previous tags for every image in the entry
+    for (const item of entry.items) {
+      await writeCaption(item.imagePath, item.previousTags);
+    }
 
     set((state) => ({
       past: state.past.slice(0, -1),
@@ -71,8 +83,10 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
 
     const entry = future[0];
 
-    // Apply new tags again
-    await writeCaption(entry.imagePath, entry.newTags);
+    // Apply new tags again for every image in the entry
+    for (const item of entry.items) {
+      await writeCaption(item.imagePath, item.newTags);
+    }
 
     set((state) => ({
       past: [...state.past, entry],

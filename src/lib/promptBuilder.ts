@@ -11,7 +11,7 @@ function substituteName(text: string, characterName: string): string {
 
 function substituteLength(text: string, length: CaptionLength | null): string {
   const value = length ?? "";
-  let out = text.split(LENGTH_PLACEHOLDER).join(value);
+  const out = text.split(LENGTH_PLACEHOLDER).join(value);
   return out.replace(/\s+/g, " ").trim();
 }
 

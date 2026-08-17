@@ -8,13 +8,14 @@ import { ProjectLoadOverlay } from "./components/project/ProjectLoadOverlay";
 import { RestorePreviousFolderPrompt } from "./components/project/RestorePreviousFolderPrompt";
 import { GridDebugPanel } from "./components/grid/GridDebugPanel";
 import { useUiStore } from "./stores/uiStore";
-import { useRatingShortcuts } from "./hooks/useRatingShortcuts";
+import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 
 function App() {
   const isPreviewOpen = useUiStore((s) => s.isPreviewOpen);
   const closePreview = useUiStore((s) => s.closePreview);
 
-  useRatingShortcuts();
+  // Single app-global keydown listener: "?" help, 1/2/3 ratings.
+  useGlobalShortcuts();
 
   return (
     <div className="flex h-screen min-w-0 flex-col overflow-x-hidden bg-surface">

@@ -7,7 +7,13 @@ import { useSelectionStore } from "@/stores/selectionStore";
 import { useSearchReplaceStore } from "@/stores/searchReplaceStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
+import {
+  useHistoryStore,
+  type HistoryEntry,
+  type HistoryItem,
+} from "@/stores/historyStore";
 import { writeCaption } from "@/lib/tauri";
+import type { ImageEntry } from "@/types";
 import { FindDuplicatesModal } from "../project/FindDuplicatesModal";
 import { DatasetStatsModal } from "../project/DatasetStatsModal";
 
@@ -33,9 +39,8 @@ export function Sidebar() {
   const [showFindDuplicates, setShowFindDuplicates] = useState(false);
   const [showDatasetStats, setShowDatasetStats] = useState(false);
 
-  const lastBatch = useSearchReplaceStore((s) => s.lastBatch);
-  const pushBatch = useSearchReplaceStore((s) => s.pushBatch);
-  const clearLastBatch = useSearchReplaceStore((s) => s.clearLastBatch);
+  const pushHistory = useHistoryStore((s) => s.pushHistory);
+  const canUndo = useHistoryStore((s) => s.past.length > 0);
   const setSearchHighlightText = useSearchReplaceStore((s) => s.setSearchHighlightText);
   const setAddTagPreview = useSearchReplaceStore((s) => s.setAddTagPreview);
   const addTagRatingFilter = useSearchReplaceStore((s) => s.addTagRatingFilter);
@@ -46,6 +51,36 @@ export function Sidebar() {
       queryClient.invalidateQueries({ queryKey: ["project", "images", rootPath] });
     }
   }, [queryClient, rootPath]);
+
+  // Merge an undone/redone history entry into the react-query cache instead of
+  // refetching the whole project (invalidation thrashes the grid on big sets).
+  const mergeHistoryEntryIntoCache = useCallback(
+    (entry: HistoryEntry, direction: "undo" | "redo") => {
+      if (!rootPath) return;
+      const byPath = new Map(entry.items.map((item) => [item.imagePath, item]));
+      queryClient.setQueryData<ImageEntry[]>(
+        ["project", "images", rootPath],
+        (old) =>
+          old?.map((img) => {
+            const item = byPath.get(img.path);
+            if (!item) return img;
+            const tags = direction === "undo" ? item.previousTags : item.newTags;
+            return { ...img, tags, has_caption: true };
+          })
+      );
+      // Keep the selected image (and TagEditor) in sync if it was affected.
+      const current = useSelectionStore.getState().selectedImage;
+      const item = current ? byPath.get(current.path) : undefined;
+      if (current && item) {
+        useSelectionStore.getState().setSelectedImage({
+          ...current,
+          tags: direction === "undo" ? item.previousTags : item.newTags,
+          has_caption: true,
+        });
+      }
+    },
+    [queryClient, rootPath]
+  );
 
   const searchReplaceMutation = useMutation({
     mutationFn: async () => {
@@ -60,7 +95,7 @@ export function Sidebar() {
           ? candidateImages.filter((img) => selectedIds.has(img.id))
           : candidateImages;
 
-      const batch: { path: string; previousTags: string[]; newTags: string[] }[] = [];
+      const batch: HistoryItem[] = [];
 
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const re = new RegExp(escaped, "gi");
@@ -72,11 +107,16 @@ export function Sidebar() {
         const changed = newTags.some((t, i) => t !== prevTags[i]);
         if (changed) {
           await writeCaption(img.path, newTags);
-          batch.push({ path: img.path, previousTags: prevTags, newTags });
+          batch.push({ imagePath: img.path, previousTags: prevTags, newTags });
         }
       }
 
-      if (batch.length > 0) pushBatch(batch);
+      if (batch.length > 0) {
+        pushHistory({
+          items: batch,
+          description: `Replaced "${search}" in ${batch.length} image${batch.length === 1 ? "" : "s"}`,
+        });
+      }
       return { replaced: batch.length, total: targetImages.length };
     },
     onSuccess: (result, _v, _ctx) => {
@@ -97,15 +137,13 @@ export function Sidebar() {
     },
   });
 
+  // Shared undo stack (same one Ctrl+Z uses) — reverts the most recent tag
+  // edit or batch operation.
   const undoMutation = useMutation({
-    mutationFn: async () => {
-      if (!lastBatch) return;
-      for (const item of lastBatch) {
-        await writeCaption(item.path, item.previousTags);
-      }
-      clearLastBatch();
+    mutationFn: async () => useHistoryStore.getState().undo(),
+    onSuccess: (entry) => {
+      if (entry) mergeHistoryEntryIntoCache(entry, "undo");
     },
-    onSuccess: invalidateProject,
     onError: (err: Error) => {
       invalidateProject();
       showToast(err.message);
@@ -126,7 +164,7 @@ export function Sidebar() {
     }: { newWord: string; oldWord: string }) => {
       const newTrim = newWord.trim();
       const oldTrim = oldWord.trim();
-      let applied = 0;
+      const batch: HistoryItem[] = [];
       for (const img of images) {
         let tags = img.tags ?? [];
         if (oldTrim) {
@@ -141,10 +179,18 @@ export function Sidebar() {
           newTags.some((t, i) => t !== prevTags[i]);
         if (changed) {
           await writeCaption(img.path, newTags);
-          applied += 1;
+          batch.push({ imagePath: img.path, previousTags: prevTags, newTags });
         }
       }
-      return { applied, total: images.length };
+      if (batch.length > 0) {
+        pushHistory({
+          items: batch,
+          description: newTrim
+            ? `Set trigger word "${newTrim}" on ${batch.length} image${batch.length === 1 ? "" : "s"}`
+            : `Removed trigger word from ${batch.length} image${batch.length === 1 ? "" : "s"}`,
+        });
+      }
+      return { applied: batch.length, total: images.length };
     },
     onSuccess: (_result, { newWord }) => {
       invalidateProject();
@@ -203,7 +249,10 @@ export function Sidebar() {
     onSuccess: (result) => {
       invalidateProject();
       if (result && result.created > 0) {
-        showToast(`Created empty captions for ${result.created} image(s)`);
+        showToast(
+          `Created empty captions for ${result.created} image(s)`,
+          "success"
+        );
       }
     },
     onError: (err: Error) => {
@@ -221,7 +270,7 @@ export function Sidebar() {
           ? images
           : images.filter((img) => img.rating === addTagRatingFilter);
       const tw = triggerWord.trim();
-      let applied = 0;
+      const batch: HistoryItem[] = [];
       for (const img of targetImages) {
         const tags = img.tags ?? [];
         const restWithoutTrigger = tw
@@ -242,9 +291,15 @@ export function Sidebar() {
           }
         }
         await writeCaption(img.path, newTags);
-        applied += 1;
+        batch.push({ imagePath: img.path, previousTags: tags, newTags });
       }
-      return { applied, total: targetImages.length };
+      if (batch.length > 0) {
+        pushHistory({
+          items: batch,
+          description: `Added tag "${tag}" to ${batch.length} image${batch.length === 1 ? "" : "s"}`,
+        });
+      }
+      return { applied: batch.length, total: targetImages.length };
     },
     onSuccess: (result) => {
       invalidateProject();
@@ -401,11 +456,12 @@ export function Sidebar() {
             <button
               type="button"
               onClick={() => undoMutation.mutate()}
-              disabled={!lastBatch || undoMutation.isPending}
+              disabled={!canUndo || undoMutation.isPending}
+              title="Undo the most recent tag edit or batch (same stack as Ctrl+Z)"
               className="flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:bg-gray-700 hover:text-gray-200 disabled:opacity-50"
             >
               <RotateCcw className="h-3 w-3" />
-              Undo
+              Undo last batch
             </button>
           </div>
           {lastResult && (

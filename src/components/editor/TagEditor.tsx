@@ -6,6 +6,7 @@ import { useProjectStore } from "@/stores/projectStore";
 import { useHistoryStore } from "@/stores/historyStore";
 import { useFilterStore } from "@/stores/filterStore";
 import { useProjectImages } from "@/hooks/useProject";
+import { isTypingTarget } from "@/hooks/useGlobalShortcuts";
 import { addTag, removeTag, reorderTags, writeCaption } from "@/lib/tauri";
 import { selectVisibleImages } from "@/lib/imageFilter";
 
@@ -74,10 +75,7 @@ export function TagEditor() {
       const newTags = await addTag(selectedImage.path, tag);
       if (newTags) {
         pushHistory({
-          imagePath: selectedImage.path,
-          imageFilename: selectedImage.filename,
-          previousTags,
-          newTags,
+          items: [{ imagePath: selectedImage.path, previousTags, newTags }],
           description: `Added tag "${tag}"`,
         });
       }
@@ -96,10 +94,7 @@ export function TagEditor() {
       const newTags = await removeTag(selectedImage.path, tag);
       if (newTags) {
         pushHistory({
-          imagePath: selectedImage.path,
-          imageFilename: selectedImage.filename,
-          previousTags,
-          newTags,
+          items: [{ imagePath: selectedImage.path, previousTags, newTags }],
           description: `Removed tag "${tag}"`,
         });
       }
@@ -117,10 +112,7 @@ export function TagEditor() {
       const previousTags = selectedImage.tags;
       await reorderTags(selectedImage.path, newTags);
       pushHistory({
-        imagePath: selectedImage.path,
-        imageFilename: selectedImage.filename,
-        previousTags,
-        newTags,
+        items: [{ imagePath: selectedImage.path, previousTags, newTags }],
         description: "Reordered tags",
       });
     },
@@ -135,10 +127,9 @@ export function TagEditor() {
       const previousTags = [...tags];
       await writeCaption(selectedImage.path, sourceTags);
       pushHistory({
-        imagePath: selectedImage.path,
-        imageFilename: selectedImage.filename,
-        previousTags,
-        newTags: sourceTags,
+        items: [
+          { imagePath: selectedImage.path, previousTags, newTags: sourceTags },
+        ],
         description: "Copied caption from adjacent image",
       });
       return sourceTags;
@@ -157,10 +148,7 @@ export function TagEditor() {
       const newTags = tags.map((t) => (t === tag ? weightedTag : t));
       await writeCaption(selectedImage.path, newTags);
       pushHistory({
-        imagePath: selectedImage.path,
-        imageFilename: selectedImage.filename,
-        previousTags: tags,
-        newTags,
+        items: [{ imagePath: selectedImage.path, previousTags: tags, newTags }],
         description: `Set weight ${weight} on "${baseTag}"`,
       });
       return newTags;
@@ -173,21 +161,25 @@ export function TagEditor() {
 
   const handleUndo = useCallback(async () => {
     const entry = await undo();
+    if (!entry) return;
     // Read the current selection from the store: this runs from a global
     // keydown handler and must not act on a stale closure.
     const current = useSelectionStore.getState().selectedImage;
-    if (entry && entry.imagePath === current?.path) {
-      setTags(entry.previousTags);
-    }
+    const item = current
+      ? entry.items.find((i) => i.imagePath === current.path)
+      : undefined;
+    if (item) setTags(item.previousTags);
     invalidateProject();
   }, [undo, invalidateProject]);
 
   const handleRedo = useCallback(async () => {
     const entry = await redo();
+    if (!entry) return;
     const current = useSelectionStore.getState().selectedImage;
-    if (entry && entry.imagePath === current?.path) {
-      setTags(entry.newTags);
-    }
+    const item = current
+      ? entry.items.find((i) => i.imagePath === current.path)
+      : undefined;
+    if (item) setTags(item.newTags);
     invalidateProject();
   }, [redo, invalidateProject]);
 
@@ -248,17 +240,15 @@ export function TagEditor() {
   // Global keyboard shortcuts
   useEffect(() => {
     function handleGlobalKey(e: KeyboardEvent) {
-      const isInput =
-        document.activeElement?.tagName === "INPUT" ||
-        document.activeElement?.tagName === "TEXTAREA";
+      // Shared guard: never steal keys from inputs/textareas/contenteditable.
+      if (isTypingTarget(document.activeElement)) return;
 
       // T to focus tag input
       if (
         e.key.toLowerCase() === "t" &&
         !e.ctrlKey &&
         !e.metaKey &&
-        !e.altKey &&
-        !isInput
+        !e.altKey
       ) {
         e.preventDefault();
         inputRef.current?.focus();

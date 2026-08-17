@@ -1,6 +1,6 @@
 [package]
 name = "idiot-lora-builder"
-version = "0.6.0"
+version = "0.7.0"
 description = "Idiot LoRa Builder - Prepare image datasets for AI model training"
 authors = ["PromptWaffle"]
 license = "MIT"
