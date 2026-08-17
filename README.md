@@ -44,21 +44,31 @@ A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, et
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) 18+ and npm
-- [Rust](https://rustup.rs/) (stable)
-- [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS (e.g. WebView2 on Windows, Xcode CLI on macOS)
+- [Rust](https://rustup.rs/) (stable — default install options are fine)
+- [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS (e.g. WebView2 on Windows — preinstalled on Windows 10/11; Xcode CLI on macOS)
 
-The Tauri CLI is a dev dependency (`@tauri-apps/cli`), installed by `npm install` — no global install needed.
+The Tauri CLI is a dev dependency (`@tauri-apps/cli`), installed automatically — no global install needed.
 
 ## Install & run
 
+### Easy way (Windows)
+
+1. [Download the project](https://github.com/Fablestarexpanse/Idiot-Lora-Builder/archive/refs/heads/main.zip) and unzip it (or `git clone` it)
+2. Double-click **`install.bat`** — it checks that Node.js and Rust are installed (telling you exactly what to grab if not) and sets everything up
+3. Double-click **`run.bat`** to start the app — from then on, `run.bat` is all you need
+
+The very first launch compiles the app and takes a few minutes; after that it starts fast. Keep the console window open while the app runs — closing it stops the app.
+
+### Manual way (any OS)
+
 ```bash
-git clone https://github.com/Fablestarexpanse/Promptwaffle_LoRa_Organizer_Tagger.git
-cd Promptwaffle_LoRa_Organizer_Tagger
+git clone https://github.com/Fablestarexpanse/Idiot-Lora-Builder.git
+cd Idiot-Lora-Builder
 npm install
 npm run tauri dev
 ```
 
-First build can take several minutes. Then:
+To build a standalone installer instead:
 
 ```bash
 npm run tauri build
