@@ -4,7 +4,7 @@ version = "0.6.0"
 description = "Idiot LoRa Builder - Prepare image datasets for AI model training"
 authors = ["PromptWaffle"]
 license = "MIT"
-repository = "https://github.com/Fablestarexpanse/Promptwaffle_LoRa_Organizer_Tagger"
+repository = "https://github.com/Fablestarexpanse/Idiot-Lora-Builder"
 edition = "2021"
 
 [build-dependencies]
