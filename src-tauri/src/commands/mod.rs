@@ -10,6 +10,7 @@ pub mod fizgig;
 pub mod images;
 pub mod llama_server;
 pub mod lm_studio;
+pub mod logs;
 pub mod models;
 pub mod ollama;
 pub mod project;

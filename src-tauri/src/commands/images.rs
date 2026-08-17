@@ -810,3 +810,115 @@ fn multi_crop_sync(payload: MultiCropPayload) -> Result<Vec<String>, String> {
     Ok(output_paths)
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---- clamp_thumb_edge ----
+
+    #[test]
+    fn clamp_thumb_edge_default_when_none() {
+        assert_eq!(clamp_thumb_edge(None), THUMB_SIZE);
+    }
+
+    #[test]
+    fn clamp_thumb_edge_clamps_low_and_high() {
+        assert_eq!(clamp_thumb_edge(Some(1)), 32);
+        assert_eq!(clamp_thumb_edge(Some(0)), 32);
+        assert_eq!(clamp_thumb_edge(Some(999_999)), THUMB_MAX_EDGE);
+    }
+
+    #[test]
+    fn clamp_thumb_edge_passes_through_valid_sizes() {
+        assert_eq!(clamp_thumb_edge(Some(256)), 256);
+        assert_eq!(clamp_thumb_edge(Some(32)), 32);
+        assert_eq!(clamp_thumb_edge(Some(THUMB_MAX_EDGE)), THUMB_MAX_EDGE);
+    }
+
+    // ---- jpeg_quality_for_size ----
+
+    #[test]
+    fn jpeg_quality_small_vs_large() {
+        assert_eq!(jpeg_quality_for_size(64), JPEG_QUALITY_SMALL);
+        assert_eq!(jpeg_quality_for_size(JPEG_QUALITY_THRESHOLD), JPEG_QUALITY_SMALL);
+        assert_eq!(jpeg_quality_for_size(JPEG_QUALITY_THRESHOLD + 1), JPEG_QUALITY_LARGE);
+        assert_eq!(jpeg_quality_for_size(1536), JPEG_QUALITY_LARGE);
+    }
+
+    // ---- resize_for_output (no-upscale guard) ----
+
+    fn test_img(w: u32, h: u32) -> DynamicImage {
+        DynamicImage::ImageRgb8(image::RgbImage::new(w, h))
+    }
+
+    #[test]
+    fn resize_never_upscales() {
+        // 100x80 with output_size 512: already fits, returned unchanged.
+        let out = resize_for_output(test_img(100, 80), Some(512));
+        assert_eq!((out.width(), out.height()), (100, 80));
+    }
+
+    #[test]
+    fn resize_downscales_longest_side_to_target() {
+        // 1024x512 with output_size 512: longest side shrinks to 512, aspect kept.
+        let out = resize_for_output(test_img(1024, 512), Some(512));
+        assert_eq!((out.width(), out.height()), (512, 256));
+    }
+
+    #[test]
+    fn resize_none_is_noop() {
+        let out = resize_for_output(test_img(3000, 2000), None);
+        assert_eq!((out.width(), out.height()), (3000, 2000));
+    }
+
+    #[test]
+    fn resize_out_of_range_size_is_ignored() {
+        // Sizes outside 64..=2048 are ignored (no resize).
+        let out = resize_for_output(test_img(3000, 2000), Some(63));
+        assert_eq!((out.width(), out.height()), (3000, 2000));
+        let out = resize_for_output(test_img(3000, 2000), Some(4096));
+        assert_eq!((out.width(), out.height()), (3000, 2000));
+    }
+
+    #[test]
+    fn resize_exact_fit_is_unchanged() {
+        let out = resize_for_output(test_img(512, 512), Some(512));
+        assert_eq!((out.width(), out.height()), (512, 512));
+    }
+
+    // ---- process_crop (pure: crop clamp + zero-size guard) ----
+
+    #[test]
+    fn process_crop_zero_size_region_is_none() {
+        let img = test_img(100, 100);
+        assert!(process_crop(&img, 0, 0, 0, 10, false, false, 0, None).is_none());
+        assert!(process_crop(&img, 0, 0, 10, 0, false, false, 0, None).is_none());
+    }
+
+    #[test]
+    fn process_crop_clamps_to_bounds() {
+        let img = test_img(100, 100);
+        // Region extends past the right/bottom edge: clamped, not an error.
+        let out = process_crop(&img, 90, 90, 50, 50, false, false, 0, None).unwrap();
+        assert_eq!((out.width(), out.height()), (10, 10));
+    }
+
+    #[test]
+    fn process_crop_rotation_swaps_dimensions() {
+        let img = test_img(100, 50);
+        let out = process_crop(&img, 0, 0, 100, 50, false, false, 90, None).unwrap();
+        assert_eq!((out.width(), out.height()), (50, 100));
+        // Negative rotation normalizes (-90 == 270).
+        let out = process_crop(&img, 0, 0, 100, 50, false, false, -90, None).unwrap();
+        assert_eq!((out.width(), out.height()), (50, 100));
+    }
+
+    #[test]
+    fn process_crop_no_upscale_via_output_size() {
+        let img = test_img(200, 200);
+        // Crop 100x100, request output 512: must NOT upscale.
+        let out = process_crop(&img, 0, 0, 100, 100, false, false, 0, Some(512)).unwrap();
+        assert_eq!((out.width(), out.height()), (100, 100));
+    }
+}

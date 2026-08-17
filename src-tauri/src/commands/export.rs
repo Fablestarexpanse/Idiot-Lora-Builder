@@ -26,6 +26,16 @@ pub struct ExportOptions {
     pub trigger_word: Option<String>,
     #[serde(default)]
     pub sequential_naming: bool,
+    /// kohya sd-scripts layout: when both `repeat_count` and `concept_name` are set,
+    /// exported files go inside a `<repeat_count>_<concept_name>` folder.
+    #[serde(default)]
+    pub repeat_count: Option<u32>,
+    #[serde(default)]
+    pub concept_name: Option<String>,
+    /// Optional dataset.toml content (composed by the frontend), written verbatim
+    /// as `dataset.toml` next to the export output after a successful export.
+    #[serde(default)]
+    pub dataset_toml: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -69,6 +79,36 @@ fn unique_name(name: &str, used: &mut HashSet<String>) -> String {
             return candidate;
         }
         n += 1;
+    }
+}
+
+/// Strip characters that are illegal in folder names (also removes path
+/// separators so a concept name can never escape the destination folder).
+fn sanitize_folder_component(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .filter(|c| {
+            !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') && !c.is_control()
+        })
+        .collect();
+    // Trailing dots/spaces are invalid on Windows; stripping leading dots also
+    // collapses ".." (traversal) to nothing.
+    cleaned.trim().trim_matches('.').trim().to_string()
+}
+
+/// kohya sd-scripts concept folder name ("<repeats>_<concept>") when both
+/// options are set and the sanitized concept name is non-empty.
+fn concept_folder(opt: &ExportOptions) -> Option<String> {
+    match (opt.repeat_count, opt.concept_name.as_deref()) {
+        (Some(n), Some(name)) => {
+            let clean = sanitize_folder_component(name);
+            if clean.is_empty() {
+                None
+            } else {
+                Some(format!("{}_{}", n, clean))
+            }
+        }
+        _ => None,
     }
 }
 
@@ -179,6 +219,12 @@ fn finish_result(
     let error = if success {
         None
     } else {
+        log::warn!(
+            "export finished with {} error(s) -> {}: {}",
+            errors.len(),
+            output_path,
+            errors.join("; ")
+        );
         Some(format!("{} file(s) failed to export", errors.len()))
     };
     ExportResult {
@@ -196,7 +242,12 @@ fn export_folder(
     opt: &ExportOptions,
     mut errors: Vec<String>,
 ) -> Result<ExportResult, String> {
-    let dest = PathBuf::from(&opt.dest_path);
+    let dest_root = PathBuf::from(&opt.dest_path);
+    // kohya layout: files go into <dest>/<repeats>_<concept>/ when configured.
+    let dest = match concept_folder(opt) {
+        Some(folder) => dest_root.join(folder),
+        None => dest_root.clone(),
+    };
     fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
 
     let mut exported = 0usize;
@@ -232,6 +283,15 @@ fn export_folder(
         exported += 1;
     }
 
+    // dataset.toml goes next to the concept folder (at the export root), so
+    // kohya can be pointed at <dest>/dataset.toml directly.
+    if let Some(toml) = opt.dataset_toml.as_deref() {
+        let toml_path = dest_root.join("dataset.toml");
+        if let Err(e) = fs::write(&toml_path, toml) {
+            errors.push(format!("Failed to write dataset.toml: {}", e));
+        }
+    }
+
     Ok(finish_result(exported, skipped, errors, &opt.dest_path))
 }
 
@@ -250,6 +310,10 @@ fn export_zip(
     let mut exported = 0usize;
     let mut skipped = 0usize;
     let mut used_names: HashSet<String> = HashSet::new();
+    // kohya layout: entries go under "<repeats>_<concept>/" inside the zip.
+    let entry_prefix = concept_folder(opt)
+        .map(|f| format!("{}/", f))
+        .unwrap_or_default();
 
     for (i, img) in images.iter().enumerate() {
         let name = output_name(img, i, opt.sequential_naming, &mut used_names);
@@ -262,11 +326,12 @@ fn export_zip(
                 continue;
             }
         };
-        zip.start_file(&name, opts).map_err(|e| e.to_string())?;
+        zip.start_file(format!("{}{}", entry_prefix, name), opts)
+            .map_err(|e| e.to_string())?;
         zip.write_all(&data).map_err(|e| e.to_string())?;
 
         let base = name.rsplit_once('.').map(|(n, _)| n).unwrap_or(&name);
-        let txt_name = format!("{}.txt", base);
+        let txt_name = format!("{}{}.txt", entry_prefix, base);
         let cap_src = caption_path(img);
         if cap_src.exists() {
             match fs::read_to_string(&cap_src) {
@@ -281,6 +346,12 @@ fn export_zip(
             }
         }
         exported += 1;
+    }
+
+    // dataset.toml sits at the zip root, beside the concept folder.
+    if let Some(toml) = opt.dataset_toml.as_deref() {
+        zip.start_file("dataset.toml", opts).map_err(|e| e.to_string())?;
+        zip.write_all(toml.as_bytes()).map_err(|e| e.to_string())?;
     }
 
     zip.finish().map_err(|e| e.to_string())?;
@@ -425,4 +496,159 @@ fn export_by_rating_sync(options: ExportByRatingOptions) -> Result<ExportResult,
     }
 
     Ok(finish_result(total_exported, total_skipped, errors, &options.dest_path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---- normalize_rel: traversal attempts and separator handling ----
+
+    #[test]
+    fn normalize_rel_strips_leading_slashes() {
+        assert_eq!(normalize_rel("/foo/bar.png"), "foo/bar.png");
+        assert_eq!(normalize_rel("///foo.png"), "foo.png");
+    }
+
+    #[test]
+    fn normalize_rel_converts_backslashes() {
+        assert_eq!(normalize_rel("sub\\dir\\img.png"), "sub/dir/img.png");
+        assert_eq!(normalize_rel("\\leading\\img.png"), "leading/img.png");
+    }
+
+    #[test]
+    fn normalize_rel_keeps_dotdot_for_canonicalize_check() {
+        // Traversal is rejected later by the canonicalize + strip_prefix guard;
+        // normalize_rel itself only normalizes separators.
+        assert_eq!(normalize_rel("../escape.png"), "../escape.png");
+        assert_eq!(normalize_rel("..\\escape.png"), "../escape.png");
+        assert_eq!(normalize_rel("a/../../b.png"), "a/../../b.png");
+    }
+
+    #[test]
+    fn normalize_rel_empty_and_root() {
+        assert_eq!(normalize_rel(""), "");
+        assert_eq!(normalize_rel("/"), "");
+    }
+
+    // ---- unique_name ----
+
+    #[test]
+    fn unique_name_no_collision_returns_original() {
+        let mut used = HashSet::new();
+        assert_eq!(unique_name("a.png", &mut used), "a.png");
+        assert_eq!(unique_name("b.png", &mut used), "b.png");
+    }
+
+    #[test]
+    fn unique_name_appends_counter_on_collision() {
+        let mut used = HashSet::new();
+        assert_eq!(unique_name("a.png", &mut used), "a.png");
+        assert_eq!(unique_name("a.png", &mut used), "a_2.png");
+        assert_eq!(unique_name("a.png", &mut used), "a_3.png");
+    }
+
+    #[test]
+    fn unique_name_is_case_insensitive() {
+        let mut used = HashSet::new();
+        assert_eq!(unique_name("Img.PNG", &mut used), "Img.PNG");
+        // Same name in different case collides (Windows semantics).
+        assert_eq!(unique_name("img.png", &mut used), "img_2.png");
+    }
+
+    #[test]
+    fn unique_name_without_extension() {
+        let mut used = HashSet::new();
+        assert_eq!(unique_name("noext", &mut used), "noext");
+        assert_eq!(unique_name("noext", &mut used), "noext_2");
+    }
+
+    // ---- apply_trigger ----
+
+    #[test]
+    fn apply_trigger_empty_caption_yields_bare_trigger() {
+        assert_eq!(apply_trigger("", Some(&"trig".to_string())), "trig");
+        assert_eq!(apply_trigger("   ", Some(&"trig".to_string())), "trig");
+    }
+
+    #[test]
+    fn apply_trigger_prepends_with_separator() {
+        assert_eq!(
+            apply_trigger("a girl, smiling", Some(&"trig".to_string())),
+            "trig, a girl, smiling"
+        );
+    }
+
+    #[test]
+    fn apply_trigger_no_double_prepend() {
+        assert_eq!(
+            apply_trigger("trig, a girl", Some(&"trig".to_string())),
+            "trig, a girl"
+        );
+        // Case-insensitive first-tag match.
+        assert_eq!(
+            apply_trigger("TRIG, a girl", Some(&"trig".to_string())),
+            "TRIG, a girl"
+        );
+    }
+
+    #[test]
+    fn apply_trigger_none_or_blank_trigger_is_noop() {
+        assert_eq!(apply_trigger("a girl", None), "a girl");
+        assert_eq!(apply_trigger("a girl", Some(&"  ".to_string())), "a girl");
+    }
+
+    // ---- concept folder sanitization ----
+
+    fn opts_with_concept(repeat: Option<u32>, name: Option<&str>) -> ExportOptions {
+        ExportOptions {
+            source_path: String::new(),
+            dest_path: String::new(),
+            as_zip: false,
+            only_captioned: false,
+            relative_paths: None,
+            trigger_word: None,
+            sequential_naming: false,
+            repeat_count: repeat,
+            concept_name: name.map(|s| s.to_string()),
+            dataset_toml: None,
+        }
+    }
+
+    #[test]
+    fn sanitize_folder_component_strips_illegal_chars() {
+        assert_eq!(sanitize_folder_component("my:concept*?"), "myconcept");
+        assert_eq!(sanitize_folder_component("a/b\\c"), "abc");
+        assert_eq!(sanitize_folder_component("nor<mal>|\"x\""), "normalx");
+    }
+
+    #[test]
+    fn sanitize_folder_component_kills_traversal() {
+        assert_eq!(sanitize_folder_component(".."), "");
+        assert_eq!(sanitize_folder_component("../evil"), "evil");
+        assert_eq!(sanitize_folder_component("..\\evil"), "evil");
+    }
+
+    #[test]
+    fn sanitize_folder_component_trims_dots_and_spaces() {
+        assert_eq!(sanitize_folder_component("  concept.  "), "concept");
+        assert_eq!(sanitize_folder_component("con cept"), "con cept");
+    }
+
+    #[test]
+    fn concept_folder_requires_both_fields() {
+        assert_eq!(concept_folder(&opts_with_concept(None, None)), None);
+        assert_eq!(concept_folder(&opts_with_concept(Some(10), None)), None);
+        assert_eq!(concept_folder(&opts_with_concept(None, Some("cat"))), None);
+        assert_eq!(
+            concept_folder(&opts_with_concept(Some(10), Some("cat"))),
+            Some("10_cat".to_string())
+        );
+    }
+
+    #[test]
+    fn concept_folder_empty_after_sanitize_is_none() {
+        assert_eq!(concept_folder(&opts_with_concept(Some(5), Some("..\\/"))), None);
+        assert_eq!(concept_folder(&opts_with_concept(Some(5), Some("   "))), None);
+    }
 }

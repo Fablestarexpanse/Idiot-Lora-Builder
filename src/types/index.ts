@@ -190,6 +190,12 @@ export interface ExportOptions {
   relative_paths?: string[] | null;
   trigger_word: string | null;
   sequential_naming: boolean;
+  /** kohya (sd-scripts): number of repeats encoded in the image folder name. */
+  repeat_count?: number | null;
+  /** kohya (sd-scripts): concept folder name (`<repeat>_<concept>`). */
+  concept_name?: string | null;
+  /** kohya (sd-scripts): full dataset.toml content to write alongside the export. */
+  dataset_toml?: string | null;
 }
 
 /** Export into good/bad/needs_edit subfolders. */

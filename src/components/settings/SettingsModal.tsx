@@ -4,7 +4,7 @@ import { useAiStore } from "@/stores/aiStore";
 import { matchThumbnailPreset } from "@/lib/thumbnailPresets";
 import type { ThumbnailPresetId } from "@/lib/thumbnailPresets";
 import { Modal } from "@/components/ui/Modal";
-import { openFolder } from "@/lib/tauri";
+import { openFolder, openLogFolder } from "@/lib/tauri";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -290,6 +290,19 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <p className="text-xs text-gray-500">
               A tool for preparing image datasets for AI model training.
             </p>
+            <button
+              type="button"
+              onClick={() => {
+                void openLogFolder().catch(() => {
+                  /* nothing sensible to do if the file manager fails to open */
+                });
+              }}
+              className="mt-2 flex items-center gap-1 rounded border border-border bg-surface px-3 py-2 text-sm text-gray-300 hover:bg-gray-600 hover:text-gray-200"
+              title="Open the folder containing the app's log files"
+            >
+              <FolderOpen className="h-4 w-4" />
+              Open log folder
+            </button>
           </section>
       </div>
     </Modal>

@@ -27,7 +27,7 @@ import type {
  *   export_dataset, export_by_rating, get_builtin_status, download_builtin,
  *   ensure_builtin_server, delete_builtin_model.
  * - No args: get_resource_stats, cancel_builtin_download, stop_builtin_server,
- *   get_builtin_server_status.
+ *   get_builtin_server_status, open_log_folder.
  */
 
 export async function openFolder(): Promise<string | null> {
@@ -541,3 +541,10 @@ export async function setCropStatus(
   });
 }
 
+
+// ============ Logs ============
+
+/** Open the app's log folder in the system file manager. */
+export async function openLogFolder(): Promise<void> {
+  return invoke<void>("open_log_folder");
+}

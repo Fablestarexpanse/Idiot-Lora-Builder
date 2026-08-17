@@ -243,7 +243,13 @@ async fn download_builtin_inner(
     let mut overall_received = 0u64;
 
     for c in missing {
-        let received = download_component(app, c, overall_received, overall_total).await?;
+        let received = download_component(app, c, overall_received, overall_total)
+            .await
+            .map_err(|e| {
+                log::error!("download_builtin: {} failed: {e}", c.id);
+                e
+            })?;
+        log::info!("download_builtin: component {} complete ({received} bytes)", c.id);
         overall_received += received;
     }
 
@@ -386,6 +392,7 @@ async fn download_component(
 }
 
 fn emit_error(app: &AppHandle, c: &Component, err: &str, overall_received: u64, overall_total: u64) {
+    log::error!("download_builtin: component {} failed: {err}", c.id);
     emit_progress(
         app,
         &DownloadProgress {

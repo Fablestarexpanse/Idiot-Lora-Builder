@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Download, FolderOpen, Archive, Loader2, Check } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
+import { useCropStore } from "@/stores/cropStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -16,6 +17,31 @@ import {
 import type { ExportResult } from "@/types";
 
 type WhatToExport = "all" | "selected" | "good" | "bad" | "needs_edit" | "by_rating";
+type TrainerPreset = "plain" | "kohya";
+
+function buildKohyaToml(
+  profile: { baseRes: number; step: number; minRes: number; maxRes: number },
+  repeatCount: number,
+  conceptName: string
+): string {
+  const dir = `${repeatCount}_${conceptName}`;
+  return [
+    "[general]",
+    `resolution = ${profile.baseRes}`,
+    "enable_bucket = true",
+    `min_bucket_reso = ${profile.minRes}`,
+    `max_bucket_reso = ${profile.maxRes}`,
+    `bucket_reso_steps = ${profile.step}`,
+    'caption_extension = ".txt"',
+    "",
+    "[[datasets]]",
+    "",
+    "  [[datasets.subsets]]",
+    `  image_dir = "${dir}"`,
+    `  num_repeats = ${repeatCount}`,
+    "",
+  ].join("\n");
+}
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -28,6 +54,7 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
   const selectedIds = useSelectionStore((s) => s.selectedIds);
   const showToast = useUiStore((s) => s.showToast);
   const triggerWordFromSettings = useSettingsStore((s) => s.triggerWord);
+  const selectedProfile = useCropStore((s) => s.selectedProfile);
 
   const [what, setWhat] = useState<WhatToExport>("all");
   const [asZip, setAsZip] = useState(false);
@@ -35,7 +62,22 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
   const [onlyCaptioned, setOnlyCaptioned] = useState(false);
   const [sequentialNaming, setSequentialNaming] = useState(false);
   const [triggerWord, setTriggerWord] = useState("");
+  const [preset, setPreset] = useState<TrainerPreset>("plain");
+  const [repeatCount, setRepeatCount] = useState(10);
+  const [conceptName, setConceptName] = useState("");
+  const [writeToml, setWriteToml] = useState(true);
   const [result, setResult] = useState<ExportResult | null>(null);
+
+  const defaultConceptName = useMemo(() => {
+    const effectiveTrigger = triggerWord.trim() || triggerWordFromSettings.trim();
+    if (effectiveTrigger) return effectiveTrigger;
+    const folderName = rootPath?.replace(/[/\\]+$/, "").split(/[/\\]/).pop();
+    return folderName || "concept";
+  }, [triggerWord, triggerWordFromSettings, rootPath]);
+
+  const kohyaActive = preset === "kohya" && what !== "by_rating";
+  const effectiveRepeats = Math.max(1, Math.round(repeatCount) || 1);
+  const effectiveConcept = conceptName.trim() || defaultConceptName;
 
   const { goodCount, badCount, needsEditCount, ratedCount } = useMemo(() => {
     let good = 0;
@@ -102,6 +144,12 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
         relative_paths: relativePaths,
         trigger_word: triggerWord.trim() || null,
         sequential_naming: sequentialNaming,
+        repeat_count: kohyaActive ? effectiveRepeats : null,
+        concept_name: kohyaActive ? effectiveConcept : null,
+        dataset_toml:
+          kohyaActive && writeToml
+            ? buildKohyaToml(selectedProfile, effectiveRepeats, effectiveConcept)
+            : null,
       });
     },
     onSuccess: (res) => setResult(res),
@@ -264,6 +312,93 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
           {what !== "by_rating" && (
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-300">
+                Trainer preset
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPreset("plain")}
+                  className={`flex-1 rounded py-2 text-sm ${
+                    preset === "plain"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  }`}
+                >
+                  Plain folder (default)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreset("kohya")}
+                  className={`flex-1 rounded py-2 text-sm ${
+                    preset === "kohya"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                  }`}
+                >
+                  kohya (sd-scripts)
+                </button>
+              </div>
+              {preset === "kohya" && (
+                <div className="mt-2 space-y-2 rounded border border-border bg-surface p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-sm text-gray-400" htmlFor="kohya-repeats">
+                      Repeats
+                    </label>
+                    <input
+                      id="kohya-repeats"
+                      type="number"
+                      min={1}
+                      value={repeatCount}
+                      onChange={(e) => {
+                        const v = e.target.valueAsNumber;
+                        setRepeatCount(Number.isFinite(v) ? Math.max(1, Math.round(v)) : 1);
+                      }}
+                      className="w-20 rounded border border-border bg-surface px-2 py-1 text-sm text-gray-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm text-gray-400" htmlFor="kohya-concept">
+                      Concept name
+                    </label>
+                    <input
+                      id="kohya-concept"
+                      type="text"
+                      value={conceptName}
+                      onChange={(e) => setConceptName(e.target.value)}
+                      placeholder={defaultConceptName}
+                      className="w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-gray-200 placeholder-gray-500"
+                    />
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={writeToml}
+                      onChange={(e) => setWriteToml(e.target.checked)}
+                      className="rounded border-gray-600"
+                    />
+                    <span className="text-sm text-gray-300">Write dataset.toml</span>
+                  </label>
+                  <p className="text-xs text-gray-500">
+                    Images go into{" "}
+                    <span className="font-mono text-gray-400">
+                      {effectiveRepeats}_{effectiveConcept}/
+                    </span>
+                    {writeToml && (
+                      <>
+                        {" "}with a dataset.toml for the{" "}
+                        <span className="text-gray-400">{selectedProfile.name}</span> profile
+                      </>
+                    )}
+                    .
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {what !== "by_rating" && (
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-300">
                 Output
               </label>
               <div className="flex gap-2">
@@ -370,6 +505,14 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
                   <p className="flex items-center gap-1 font-medium">
                     <Check className="h-4 w-4" />
                     Exported {result.exported_count} images
+                    {kohyaActive && (
+                      <>
+                        {" "}into{" "}
+                        <span className="font-mono">
+                          {effectiveRepeats}_{effectiveConcept}/
+                        </span>
+                      </>
+                    )}
                   </p>
                   {result.skipped_count > 0 && (
                     <p className="mt-1 text-xs">Skipped: {result.skipped_count}</p>

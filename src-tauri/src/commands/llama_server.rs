@@ -148,13 +148,17 @@ pub async fn ensure_builtin_server(
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to start llama-server: {e}"))?;
+    let mut child = cmd.spawn().map_err(|e| {
+        log::error!("llama-server spawn failed ({}): {e}", exe.display());
+        format!("Failed to start llama-server: {e}")
+    })?;
 
     // Wait for the model to finish loading (/health returns 200 when ready).
     let deadline = Instant::now() + Duration::from_secs(STARTUP_TIMEOUT_SECS);
     loop {
         if let Ok(Some(status)) = child.try_wait() {
             let tail = log_tail(&log_path, 2000);
+            log::error!("llama-server exited during startup ({status}). Log tail:\n{tail}");
             return Err(format!(
                 "llama-server exited during startup ({status}). Log tail:\n{tail}"
             ));
@@ -165,6 +169,10 @@ pub async fn ensure_builtin_server(
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
+            log::error!(
+                "llama-server did not become ready within {STARTUP_TIMEOUT_SECS}s. Log tail:\n{}",
+                log_tail(&log_path, 2000)
+            );
             return Err(format!(
                 "llama-server did not become ready within {STARTUP_TIMEOUT_SECS}s. \
                  If you are on the Vulkan backend without a capable GPU, try the CPU backend."

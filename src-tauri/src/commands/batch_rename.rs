@@ -65,6 +65,72 @@ fn save_json_map(path: &Path, map: &HashMap<String, String>, key: &str) -> Resul
     save_json_file_atomic(path, &serde_json::Value::Object(obj))
 }
 
+/// Pre-flight collision check: compute every target name up front and fail
+/// cleanly (before any rename) if a target collides with another target or
+/// with an existing file that is not itself a rename source.
+fn preflight_collision_check(
+    root: &Path,
+    relative_paths: &[String],
+    prefix: &str,
+    start_index: u32,
+    zero_pad: u32,
+) -> Result<(), String> {
+    let mut sources: HashSet<PathBuf> = HashSet::new();
+    for relative_path in relative_paths {
+        let rel_normalized = relative_path.replace('/', std::path::MAIN_SEPARATOR_STR);
+        let old_path = root.join(&rel_normalized);
+        sources.insert(caption_path_for(&old_path));
+        sources.insert(old_path);
+    }
+
+    let mut targets_seen: HashSet<PathBuf> = HashSet::new();
+    let mut preflight_index = start_index;
+    for relative_path in relative_paths {
+        let rel_normalized = relative_path.replace('/', std::path::MAIN_SEPARATOR_STR);
+        let old_path = root.join(&rel_normalized);
+
+        let ext = old_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("png")
+            .to_string();
+        let new_name = format!(
+            "{}_{:0width$}.{}",
+            prefix,
+            preflight_index,
+            ext,
+            width = zero_pad as usize
+        );
+        let parent = old_path.parent().unwrap_or(root);
+        let new_path = parent.join(&new_name);
+        let caption_new = caption_path_for(&new_path);
+        preflight_index += 1;
+
+        if !targets_seen.insert(new_path.clone()) {
+            return Err(format!(
+                "Rename would produce duplicate target name: {}",
+                new_name
+            ));
+        }
+        if new_path != old_path && new_path.exists() && !sources.contains(&new_path) {
+            return Err(format!(
+                "Target already exists and is not part of the rename: {}",
+                new_name
+            ));
+        }
+        if caption_new != caption_path_for(&old_path)
+            && caption_new.exists()
+            && !sources.contains(&caption_new)
+        {
+            return Err(format!(
+                "Caption target already exists and is not part of the rename: {}",
+                caption_new.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Renames image files and their caption files with prefix + zero-padded index.
 /// Also updates ratings and crop_status files to maintain metadata.
 /// Rejects any relative_path that resolves outside the project root (path traversal safety).
@@ -106,64 +172,8 @@ fn batch_rename_sync(
     let mut ratings = load_json_map(&ratings_path)?;
     let mut crop_statuses = load_json_map(&crop_status_path)?;
 
-    // Pre-flight collision check: compute every target name up front and fail
-    // cleanly (before any rename) if a target collides with another target or
-    // with an existing file that is not itself a rename source.
-    {
-        let mut sources: HashSet<PathBuf> = HashSet::new();
-        for relative_path in &payload.relative_paths {
-            let rel_normalized = relative_path.replace('/', std::path::MAIN_SEPARATOR_STR);
-            let old_path = root.join(&rel_normalized);
-            sources.insert(caption_path_for(&old_path));
-            sources.insert(old_path);
-        }
-
-        let mut targets_seen: HashSet<PathBuf> = HashSet::new();
-        let mut preflight_index = payload.start_index;
-        for relative_path in &payload.relative_paths {
-            let rel_normalized = relative_path.replace('/', std::path::MAIN_SEPARATOR_STR);
-            let old_path = root.join(&rel_normalized);
-
-            let ext = old_path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("png")
-                .to_string();
-            let new_name = format!(
-                "{}_{:0width$}.{}",
-                prefix,
-                preflight_index,
-                ext,
-                width = zero_pad as usize
-            );
-            let parent = old_path.parent().unwrap_or(&root);
-            let new_path = parent.join(&new_name);
-            let caption_new = caption_path_for(&new_path);
-            preflight_index += 1;
-
-            if !targets_seen.insert(new_path.clone()) {
-                return Err(format!(
-                    "Rename would produce duplicate target name: {}",
-                    new_name
-                ));
-            }
-            if new_path != old_path && new_path.exists() && !sources.contains(&new_path) {
-                return Err(format!(
-                    "Target already exists and is not part of the rename: {}",
-                    new_name
-                ));
-            }
-            if caption_new != caption_path_for(&old_path)
-                && caption_new.exists()
-                && !sources.contains(&caption_new)
-            {
-                return Err(format!(
-                    "Caption target already exists and is not part of the rename: {}",
-                    caption_new.display()
-                ));
-            }
-        }
-    }
+    // Pre-flight collision check: fail cleanly before any rename happens.
+    preflight_collision_check(&root, &payload.relative_paths, prefix, payload.start_index, zero_pad)?;
 
     // Track path mappings for updating metadata
     let mut path_mappings: Vec<(String, String)> = Vec::new();
@@ -283,6 +293,7 @@ fn batch_rename_sync(
         }
 
         if let Err(e) = save_json_map(&ratings_path, &updated_ratings, "ratings") {
+            log::error!("batch_rename: failed to update ratings file: {e}");
             errors.push(format!("Failed to update ratings file: {}", e));
         }
 
@@ -299,6 +310,7 @@ fn batch_rename_sync(
         }
 
         if let Err(e) = save_json_map(&crop_status_path, &updated_crop_statuses, "statuses") {
+            log::error!("batch_rename: failed to update crop_status file: {e}");
             errors.push(format!("Failed to update crop_status file: {}", e));
         }
     }
@@ -308,4 +320,131 @@ fn batch_rename_sync(
         renamed_count: renamed,
         errors,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn touch(path: &Path) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, b"x").unwrap();
+    }
+
+    // ---- preflight_collision_check ----
+
+    #[test]
+    fn preflight_ok_for_clean_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(&dir.path().join("a.png"));
+        touch(&dir.path().join("b.png"));
+        let rels = vec!["a.png".to_string(), "b.png".to_string()];
+        assert!(preflight_collision_check(dir.path(), &rels, "img", 1, 4).is_ok());
+    }
+
+    #[test]
+    fn preflight_same_source_twice_gets_distinct_targets() {
+        let dir = tempfile::tempdir().unwrap();
+        // Sequential indices give each list entry a distinct target name, so
+        // even a repeated source passes the duplicate-target guard (the guard
+        // itself is defensive against future naming-scheme changes).
+        touch(&dir.path().join("a.png"));
+        let rels = vec!["a.png".to_string(), "a.png".to_string()];
+        assert!(preflight_collision_check(dir.path(), &rels, "img", 1, 4).is_ok());
+    }
+
+    #[test]
+    fn preflight_rejects_existing_unrelated_target() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(&dir.path().join("a.png"));
+        // img_0001.png exists and is NOT part of the rename set.
+        touch(&dir.path().join("img_0001.png"));
+        let rels = vec!["a.png".to_string()];
+        let err = preflight_collision_check(dir.path(), &rels, "img", 1, 4).unwrap_err();
+        assert!(err.contains("Target already exists"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn preflight_allows_target_that_is_also_a_source() {
+        let dir = tempfile::tempdir().unwrap();
+        // img_0001.png exists but is itself being renamed (it is in the set).
+        touch(&dir.path().join("img_0001.png"));
+        touch(&dir.path().join("a.png"));
+        let rels = vec!["img_0001.png".to_string(), "a.png".to_string()];
+        assert!(preflight_collision_check(dir.path(), &rels, "img", 1, 4).is_ok());
+    }
+
+    #[test]
+    fn preflight_rejects_existing_unrelated_caption_target() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(&dir.path().join("a.png"));
+        // The caption target img_0001.txt exists and belongs to no source.
+        touch(&dir.path().join("img_0001.txt"));
+        let rels = vec!["a.png".to_string()];
+        let err = preflight_collision_check(dir.path(), &rels, "img", 1, 4).unwrap_err();
+        assert!(err.contains("Caption target already exists"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn preflight_noop_rename_is_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        // File already has its target name: new_path == old_path, no error.
+        touch(&dir.path().join("img_0001.png"));
+        let rels = vec!["img_0001.png".to_string()];
+        assert!(preflight_collision_check(dir.path(), &rels, "img", 1, 4).is_ok());
+    }
+
+    #[test]
+    fn preflight_handles_subfolder_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(&dir.path().join("sub").join("a.png"));
+        touch(&dir.path().join("sub").join("img_0002.png"));
+        // Target img_0002.png in "sub" exists and is not a source -> error.
+        let rels = vec!["sub/a.png".to_string(), "sub/b.png".to_string()];
+        let err = preflight_collision_check(dir.path(), &rels, "img", 1, 4).unwrap_err();
+        assert!(err.contains("Target already exists"), "unexpected: {err}");
+    }
+
+    // ---- normalize_rel_key (metadata map keys) ----
+
+    #[test]
+    fn normalize_rel_key_unifies_separators() {
+        assert_eq!(normalize_rel_key("sub\\a.png"), "sub/a.png");
+        assert_eq!(normalize_rel_key("sub/a.png"), "sub/a.png");
+        assert_eq!(normalize_rel_key("a.png"), "a.png");
+    }
+
+    // ---- load_json_map ----
+
+    #[test]
+    fn load_json_map_missing_file_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let map = load_json_map(&dir.path().join("nope.json")).unwrap();
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn load_json_map_corrupt_file_is_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ratings.json");
+        fs::write(&path, "not json at all").unwrap();
+        assert!(load_json_map(&path).is_err());
+    }
+
+    #[test]
+    fn load_json_map_reads_ratings_and_statuses_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let ratings = dir.path().join("ratings.json");
+        fs::write(&ratings, r#"{"ratings":{"sub\\a.png":"good"}}"#).unwrap();
+        let map = load_json_map(&ratings).unwrap();
+        // Keys are normalized to forward slashes on load.
+        assert_eq!(map.get("sub/a.png").map(String::as_str), Some("good"));
+
+        let statuses = dir.path().join("crop_status.json");
+        fs::write(&statuses, r#"{"statuses":{"b.png":"cropped"}}"#).unwrap();
+        let map = load_json_map(&statuses).unwrap();
+        assert_eq!(map.get("b.png").map(String::as_str), Some("cropped"));
+    }
 }

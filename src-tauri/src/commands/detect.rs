@@ -95,7 +95,7 @@ pub async fn detect_faces(
     let model_path = match super::models::ensure_yunet(&app).await {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("detect_faces: YuNet model unavailable: {e}");
+            log::warn!("detect_faces: YuNet model unavailable: {e}");
             return Ok(Vec::new());
         }
     };
@@ -105,12 +105,12 @@ pub async fn detect_faces(
     let dylib_path = match super::models::ensure_onnxruntime(&app).await {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("detect_faces: onnxruntime unavailable: {e}");
+            log::warn!("detect_faces: onnxruntime unavailable: {e}");
             return Ok(Vec::new());
         }
     };
     if let Err(e) = init_ort_once(&dylib_path) {
-        eprintln!("detect_faces: ort init failed: {e}");
+        log::error!("detect_faces: ort init failed: {e}");
         return Ok(Vec::new());
     }
 
@@ -125,7 +125,7 @@ pub async fn detect_faces(
     let faces = match result {
         Ok(faces) => faces,
         Err(e) => {
-            eprintln!("detect_faces: detection failed for {}: {e}", payload.path);
+            log::warn!("detect_faces: detection failed for {}: {e}", payload.path);
             return Ok(Vec::new());
         }
     };

@@ -48,8 +48,11 @@ pub fn load_json_file<T: DeserializeOwned + Default>(path: &Path) -> Result<T, S
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(T::default()),
         Err(e) => return Err(format!("Failed to read {}: {}", path.display(), e)),
     };
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
+    serde_json::from_str(&content).map_err(|e| {
+        let msg = format!("Failed to parse {}: {}", path.display(), e);
+        log::error!("load_json_file: corrupt sidecar left untouched: {msg}");
+        msg
+    })
 }
 
 /// Save a value as pretty JSON (write to a temp file, then rename over the target).
@@ -68,5 +71,87 @@ pub fn save_json_file_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(),
 pub fn backup_file_best_effort(path: &Path, bak_name: &str) {
     if path.is_file() {
         let _ = fs::copy(path, path.with_file_name(bak_name));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+    use std::collections::HashMap;
+
+    #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+    struct SampleData {
+        entries: HashMap<String, String>,
+    }
+
+    #[test]
+    fn load_json_file_missing_yields_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("does_not_exist.json");
+        let loaded: SampleData = load_json_file(&path).unwrap();
+        assert_eq!(loaded, SampleData::default());
+    }
+
+    #[test]
+    fn load_json_file_corrupt_is_error_not_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("corrupt.json");
+        fs::write(&path, "{ this is not json").unwrap();
+        let result: Result<SampleData, String> = load_json_file(&path);
+        let err = result.unwrap_err();
+        assert!(err.contains("Failed to parse"), "unexpected error: {err}");
+        // The corrupt file must still be on disk, untouched.
+        assert_eq!(fs::read_to_string(&path).unwrap(), "{ this is not json");
+    }
+
+    #[test]
+    fn save_and_load_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested").join("data.json");
+
+        let mut data = SampleData::default();
+        data.entries.insert("a/b.png".to_string(), "good".to_string());
+        data.entries.insert("c.png".to_string(), "bad".to_string());
+
+        // Parent dir does not exist yet; save must create it.
+        save_json_file_atomic(&path, &data).unwrap();
+        let loaded: SampleData = load_json_file(&path).unwrap();
+        assert_eq!(loaded, data);
+
+        // No stray .tmp file left behind.
+        assert!(!path.with_extension("json.tmp").exists());
+    }
+
+    #[test]
+    fn save_overwrites_existing_atomically() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("data.json");
+
+        let mut first = SampleData::default();
+        first.entries.insert("x.png".to_string(), "good".to_string());
+        save_json_file_atomic(&path, &first).unwrap();
+
+        let mut second = SampleData::default();
+        second.entries.insert("y.png".to_string(), "bad".to_string());
+        save_json_file_atomic(&path, &second).unwrap();
+
+        let loaded: SampleData = load_json_file(&path).unwrap();
+        assert_eq!(loaded, second);
+    }
+
+    #[test]
+    fn is_image_path_extensions() {
+        assert!(is_image_path(Path::new("a.png")));
+        assert!(is_image_path(Path::new("a.JPG")));
+        assert!(is_image_path(Path::new("dir/a.webp")));
+        assert!(!is_image_path(Path::new("a.txt")));
+        assert!(!is_image_path(Path::new("no_extension")));
+    }
+
+    #[test]
+    fn normalize_rel_key_forward_slashes() {
+        assert_eq!(normalize_rel_key("a\\b\\c.png"), "a/b/c.png");
+        assert_eq!(normalize_rel_key("a/b/c.png"), "a/b/c.png");
     }
 }
