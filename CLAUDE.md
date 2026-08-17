@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-LoRA Dataset Studio — Tauri v2 desktop app for tagging/curating image datasets for LoRA training.
+Idiot LoRa Builder (formerly LoRA Dataset Studio) — Tauri v2 desktop app for tagging/curating image datasets for LoRA training.
 Frontend: React 18 + TypeScript + Vite + Tailwind + Zustand + TanStack Query. Backend: Rust in `src-tauri/`.
 
 ## Commands

@@ -285,7 +285,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               About
             </h3>
             <p className="text-sm text-gray-400">
-              LoRA Dataset Studio v{__APP_VERSION__}
+              Idiot LoRa Builder v{__APP_VERSION__}
             </p>
             <p className="text-xs text-gray-500">
               A tool for preparing image datasets for AI model training.

@@ -162,7 +162,7 @@ export function Toolbar() {
         <span className="text-xs text-gray-500">|</span>
 
         {/* Title */}
-        <span className="min-w-0 flex-1 truncate text-xs text-gray-500">LoRA Dataset Studio</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-gray-500">Idiot LoRa Builder</span>
 
         {/* Right side buttons */}
         <button

@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default capabilities for LoRA Dataset Studio",
+  "description": "Default capabilities for Idiot LoRa Builder",
   "windows": ["main"],
   "permissions": [
     "core:default",

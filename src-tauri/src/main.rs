@@ -1,3 +1,3 @@
 fn main() {
-    lora_dataset_studio::run()
+    idiot_lora_builder::run()
 }

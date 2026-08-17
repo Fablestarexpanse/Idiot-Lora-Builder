@@ -53,7 +53,7 @@ pub fn run() {
             commands::fizgig::clear_staging_images,
         ])
         .build(tauri::generate_context!())
-        .expect("error while running LoRA Dataset Studio")
+        .expect("error while running Idiot LoRa Builder")
         .run(|_app, event| {
             // Make sure the bundled llama-server child process dies with the app.
             if let tauri::RunEvent::Exit = event {

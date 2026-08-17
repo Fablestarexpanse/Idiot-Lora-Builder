@@ -1,15 +1,17 @@
 <p align="center">
-  <img src="assets/logo.png" alt="LoRA Dataset Studio logo" width="480" />
+  <img src="assets/logo.png" alt="Idiot LoRa Builder logo" width="480" />
 </p>
 
-# LoRA Dataset Studio
+# Idiot LoRa Builder
+
+*Simple for idiots. Powerful for pros.* (formerly LoRA Dataset Studio)
 
 A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, etc.). Tag and caption images, rate and curate them, crop for training, and caption with local AI — a built-in captioner (downloads a Qwen3-VL vision model on demand and runs fully offline, no extra software needed) or your own LM Studio / Ollama — then export to folder, ZIP, or straight into a trainer.
 
 ![Version](https://img.shields.io/badge/version-0.6.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-![LoRA Dataset Studio — main window](assets/screenshot.png)
+![Idiot LoRa Builder — main window](assets/screenshot.png)
 
 ## Features
 

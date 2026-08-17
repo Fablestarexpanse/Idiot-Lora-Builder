@@ -1,7 +1,7 @@
 [package]
-name = "lora-dataset-studio"
+name = "idiot-lora-builder"
 version = "0.6.0"
-description = "LoRA Dataset Studio - Prepare image datasets for AI model training"
+description = "Idiot LoRa Builder - Prepare image datasets for AI model training"
 authors = ["PromptWaffle"]
 license = "MIT"
 repository = "https://github.com/Fablestarexpanse/Promptwaffle_LoRa_Organizer_Tagger"

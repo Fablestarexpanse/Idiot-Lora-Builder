@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to LoRA Dataset Studio are documented here.
+All notable changes to Idiot LoRa Builder (formerly LoRA Dataset Studio) are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]

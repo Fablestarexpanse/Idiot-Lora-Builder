@@ -1558,6 +1558,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
+name = "idiot-lora-builder"
+version = "0.6.0"
+dependencies = [
+ "base64 0.22.1",
+ "futures",
+ "hex",
+ "image",
+ "kamadak-exif",
+ "once_cell",
+ "ort",
+ "rayon",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-shell",
+ "tokio",
+ "walkdir",
+ "zip",
+]
+
+[[package]]
 name = "idna"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1880,31 +1905,6 @@ name = "log"
 version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
-
-[[package]]
-name = "lora-dataset-studio"
-version = "0.6.0"
-dependencies = [
- "base64 0.22.1",
- "futures",
- "hex",
- "image",
- "kamadak-exif",
- "once_cell",
- "ort",
- "rayon",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-shell",
- "tokio",
- "walkdir",
- "zip",
-]
 
 [[package]]
 name = "mac"
