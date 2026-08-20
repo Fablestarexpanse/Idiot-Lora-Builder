@@ -6,6 +6,7 @@ import { ImagePreviewModal } from "./components/preview/ImagePreviewModal";
 import { CropModal } from "./components/preview/CropModal";
 import { ProjectLoadOverlay } from "./components/project/ProjectLoadOverlay";
 import { RestorePreviousFolderPrompt } from "./components/project/RestorePreviousFolderPrompt";
+import { DatasetMetaPrompt } from "./components/project/DatasetMetaPrompt";
 import { GridDebugPanel } from "./components/grid/GridDebugPanel";
 import { useUiStore } from "./stores/uiStore";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
@@ -30,6 +31,7 @@ function App() {
       <CropModal />
       <ProjectLoadOverlay />
       <RestorePreviousFolderPrompt />
+      <DatasetMetaPrompt />
       <Toast />
       <GridDebugPanel />
     </div>

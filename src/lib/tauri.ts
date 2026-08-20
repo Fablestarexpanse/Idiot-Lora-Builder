@@ -14,6 +14,7 @@ import type {
   FaceRegion,
   BuiltinModelId,
   BuiltinBackend,
+  DatasetMeta,
 } from "@/types";
 
 /**
@@ -22,7 +23,7 @@ import type {
  *   crop_image, read_caption, write_caption, add_tag, remove_tag, reorder_tags,
  *   test_lm_studio_connection, test_ollama_connection, generate_caption_lm_studio, generate_captions_batch,
  *   clear_all_ratings, set_rating, set_ratings_batch, get_ratings, batch_rename, delete_images,
- *   get_crop_statuses, batch_resize.
+ *   get_crop_statuses, batch_resize, read_dataset_metadata.
  * - Commands that expect the args object directly (no "payload" key): find_duplicates, delete_image,
  *   export_dataset, export_by_rating, get_builtin_status, download_builtin,
  *   ensure_builtin_server, delete_builtin_model.
@@ -62,9 +63,29 @@ export interface FindDuplicatesResult {
 }
 
 /** Find duplicate images by file content hash (SHA-256). */
-export async function findDuplicates(rootPath: string): Promise<FindDuplicatesResult> {
+/**
+ * Reads a generator's metadata.json from a project folder, if there is one we
+ * recognise. Resolves to null for any folder that has none — never throws for
+ * a missing or malformed file.
+ */
+export async function readDatasetMetadata(rootPath: string): Promise<DatasetMeta | null> {
+  return invoke<DatasetMeta | null>("read_dataset_metadata", {
+    payload: { root_path: rootPath },
+  });
+}
+
+/**
+ * Finds duplicate images. maxDistance 0 (default) matches byte-identical files
+ * via SHA-256; above 0 matches perceptually, grouping images whose dHashes are
+ * within that many bits so re-encodes and resizes are caught too.
+ */
+export async function findDuplicates(
+  rootPath: string,
+  maxDistance = 0
+): Promise<FindDuplicatesResult> {
   return invoke<FindDuplicatesResult>("find_duplicates", {
     root_path: rootPath,
+    max_distance: maxDistance,
   });
 }
 

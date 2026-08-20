@@ -4,6 +4,7 @@ pub mod batch_rename;
 pub mod captions;
 pub mod common;
 pub mod crop_status;
+pub mod dataset_meta;
 pub mod detect;
 pub mod export;
 pub mod fizgig;
