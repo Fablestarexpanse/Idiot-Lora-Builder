@@ -190,8 +190,9 @@ fn find_duplicates_sync(payload: FindDuplicatesPayload) -> Result<FindDuplicates
     }
     let canonical_root = root.canonicalize().map_err(|e| e.to_string())?;
 
-    // Collect all image paths first
-    let image_paths: Vec<PathBuf> = WalkDir::new(&root)
+    // Collect all image paths first. Walk from canonical so strip_prefix(canonical)
+    // below always succeeds and the keys match how open_project stores relative_path.
+    let image_paths: Vec<PathBuf> = WalkDir::new(&canonical_root)
         .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -286,4 +287,91 @@ fn load_image_dimensions_sync(payload: LoadImageDimensionsPayload) -> Result<Vec
         .collect();
 
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{ImageBuffer, Rgb};
+    use std::path::Path;
+
+    /// Writes a small image whose pixels vary with `seed`, so distinct seeds
+    /// produce visibly distinct images (and distinct content hashes).
+    fn write_image(path: &Path, seed: u8) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        let img = ImageBuffer::from_fn(16, 16, |x, y| {
+            Rgb([
+                (x as u8).wrapping_mul(seed).wrapping_add(seed),
+                (y as u8).wrapping_mul(seed),
+                seed,
+            ])
+        });
+        img.save(path).unwrap();
+    }
+
+    fn find_dupes(root: &str) -> Vec<Vec<String>> {
+        find_duplicates_sync(FindDuplicatesPayload {
+            root_path: root.to_string(),
+        })
+        .unwrap()
+        .groups
+    }
+
+    fn assert_all_relative(keys: &[String]) {
+        for key in keys {
+            assert!(!Path::new(key).is_absolute(), "absolute key leaked: {key}");
+            assert!(!key.contains(".."), "unresolved key leaked: {key}");
+        }
+    }
+
+    #[test]
+    fn duplicate_keys_stay_relative_for_a_non_canonical_root() {
+        // Regression: the walk started at the raw root while strip_prefix used
+        // the canonicalized one, so any root that isn't already canonical made
+        // strip_prefix fail and fall back to the absolute path. On Windows
+        // canonicalize() always returns a \\?\ path, so this failed *every*
+        // time there; "dir/../dir" reproduces the same code path portably.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("ds");
+        fs::create_dir_all(&root).unwrap();
+        write_image(&root.join("a.png"), 3);
+        fs::copy(root.join("a.png"), root.join("b.png")).unwrap();
+
+        let non_canonical = root.join("..").join("ds");
+        let groups = find_dupes(non_canonical.to_str().unwrap());
+
+        assert_eq!(groups.len(), 1, "the two identical files should group");
+        let mut keys = groups[0].clone();
+        keys.sort();
+        assert_eq!(keys, vec!["a.png".to_string(), "b.png".to_string()]);
+        assert_all_relative(&keys);
+    }
+
+    #[test]
+    fn duplicate_keys_are_relative_for_a_canonical_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        write_image(&root.join("top.png"), 5);
+        write_image(&root.join("sub").join("copy.png"), 5);
+
+        let groups = find_dupes(root.to_str().unwrap());
+        assert_eq!(groups.len(), 1, "identical files in different folders group");
+        let mut keys = groups[0].clone();
+        keys.sort();
+        assert_eq!(keys, vec!["sub/copy.png".to_string(), "top.png".to_string()],
+                   "nested keys keep their folder and use forward slashes");
+        assert_all_relative(&keys);
+    }
+
+    #[test]
+    fn distinct_images_do_not_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        write_image(&root.join("a.png"), 1);
+        write_image(&root.join("b.png"), 200);
+
+        assert!(find_dupes(root.to_str().unwrap()).is_empty());
+    }
 }
