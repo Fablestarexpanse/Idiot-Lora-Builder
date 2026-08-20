@@ -62,9 +62,18 @@ export interface FindDuplicatesResult {
 }
 
 /** Find duplicate images by file content hash (SHA-256). */
-export async function findDuplicates(rootPath: string): Promise<FindDuplicatesResult> {
+/**
+ * Finds duplicate images. maxDistance 0 (default) matches byte-identical files
+ * via SHA-256; above 0 matches perceptually, grouping images whose dHashes are
+ * within that many bits so re-encodes and resizes are caught too.
+ */
+export async function findDuplicates(
+  rootPath: string,
+  maxDistance = 0
+): Promise<FindDuplicatesResult> {
   return invoke<FindDuplicatesResult>("find_duplicates", {
     root_path: rootPath,
+    max_distance: maxDistance,
   });
 }
 
