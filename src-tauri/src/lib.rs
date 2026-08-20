@@ -23,6 +23,7 @@ pub fn run() {
             commands::project::open_project,
             commands::project::find_duplicates,
             commands::project::load_image_dimensions,
+            commands::dataset_meta::read_dataset_metadata,
             commands::images::ensure_thumbnail,
             commands::images::ensure_thumbnails_batch,
             commands::images::get_image_data_url,

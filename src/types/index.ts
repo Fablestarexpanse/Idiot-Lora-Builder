@@ -1,3 +1,12 @@
+/** Subset of a generator's metadata.json that we offer to reuse. */
+export interface DatasetMeta {
+  generator: string | null;
+  trigger: string | null;
+  character_name: string | null;
+  dataset_type: string | null;
+  caption_style: string | null;
+}
+
 /** Image rating status. */
 export type ImageRating = "none" | "good" | "bad" | "needs_edit";
 
