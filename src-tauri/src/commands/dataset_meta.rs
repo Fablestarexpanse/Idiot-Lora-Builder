@@ -71,9 +71,9 @@ pub async fn read_dataset_metadata(
     payload: ReadDatasetMetadataPayload,
 ) -> Result<Option<DatasetMeta>, String> {
     let root = PathBuf::from(&payload.root_path);
-    Ok(tauri::async_runtime::spawn_blocking(move || read_dataset_meta(&root))
+    tauri::async_runtime::spawn_blocking(move || read_dataset_meta(&root))
         .await
-        .map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
 }
 
 fn read_dataset_meta(root: &Path) -> Option<DatasetMeta> {

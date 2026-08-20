@@ -67,9 +67,17 @@ refetches the whole project and thrashes the grid. Full invalidation is fine for
 - `detect_faces` runs real YuNet ONNX inference via `ort` (model auto-downloaded, session
   cached globally). Failures return an empty list, never fabricated regions.
 
+### 5. Walk from the canonical root
+Any scan that reports paths relative to the project root must `WalkDir` the **canonicalized**
+root, not the raw one. `strip_prefix(canonical)` silently fails otherwise and the key falls
+back to an absolute path — and on Windows `canonicalize()` always returns a `\\?\` path, so
+that is every scan, not an edge case. `open_project`, `captions.rs` and `export.rs` follow this;
+`find_duplicates` didn't, which is what made duplicate deletes build `C:\ds\C:/ds/a.png`.
+
 ## Honesty notes
 
-- `batch_resize` exists in the backend (`images.rs`) and `src/lib/tauri.ts` but has **no UI**.
+- Duplicate finding is exact (SHA-256) by default; passing `max_distance > 0` switches it to
+  perceptual dHash matching. The exact path is unchanged and stays the default.
 
 ## Misc
 
