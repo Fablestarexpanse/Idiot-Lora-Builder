@@ -57,6 +57,20 @@ caption, crop status) prefer `setQueryData` merges over full `invalidateQueries`
 refetches the whole project and thrashes the grid. Full invalidation is fine for bulk ops
 (clear-all, batch rename).
 
+### 5. Walk from the canonical root
+Any scan that reports paths relative to the project root must `WalkDir` the **canonicalized**
+root, not the raw one. `strip_prefix(canonical)` silently fails otherwise and the key falls
+back to an absolute path — and on Windows `canonicalize()` always returns a `\\?\` path, so
+that is every scan, not an edge case. `open_project`, `captions.rs` and `export.rs` follow this;
+`find_duplicates` didn't, which is what made duplicate deletes build `C:\ds\C:/ds/a.png`.
+
+### 6. Invoke arg names are Rust parameter names
+Tauri looks each invoke key up **exactly**, lowerCamelCasing the Rust parameter name — there is
+no snake_case fallback and no spreading an args object across parameters. `fn f(payload: P)`
+takes `{ payload: {...} }`; `fn f(model_id: String)` takes `{ modelId }`. Get it wrong and the
+call is rejected with "missing required key" before the command body runs, so the feature looks
+merely broken rather than mis-wired. `find_duplicates` and `delete_image` were both wrong.
+
 ## Built-in captioner (v0.6.0)
 
 - `models.rs` downloads the llama.cpp server runtime (pinned release tag) and Qwen3-VL GGUF
@@ -69,7 +83,8 @@ refetches the whole project and thrashes the grid. Full invalidation is fine for
 
 ## Honesty notes
 
-- `batch_resize` exists in the backend (`images.rs`) and `src/lib/tauri.ts` but has **no UI**.
+- Duplicate finding is exact (SHA-256) by default; passing `max_distance > 0` switches it to
+  perceptual dHash matching. The exact path is unchanged and stays the default.
 
 ## Misc
 

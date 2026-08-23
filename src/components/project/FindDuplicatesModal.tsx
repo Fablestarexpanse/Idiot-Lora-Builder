@@ -109,6 +109,10 @@ export function FindDuplicatesModal({ isOpen, onClose }: FindDuplicatesModalProp
 
   const [groups, setGroups] = useState<string[][] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Exact stays the default: it can never group two images a human would call
+  // different, which is the right posture for a screen with a delete button.
+  const [similar, setSimilar] = useState(false);
+  const [distance, setDistance] = useState(5);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
   // Subscribe to the project image list cache (never fetches from here) so
@@ -145,7 +149,7 @@ export function FindDuplicatesModal({ isOpen, onClose }: FindDuplicatesModalProp
   const findMutation = useMutation({
     mutationFn: async () => {
       if (!rootPath) throw new Error("No project open");
-      return findDuplicates(rootPath);
+      return findDuplicates(rootPath, similar ? distance : 0);
     },
     onSuccess: (res) => {
       setGroups(res.groups);
@@ -300,8 +304,58 @@ export function FindDuplicatesModal({ isOpen, onClose }: FindDuplicatesModalProp
     >
       <div className="flex flex-1 flex-col overflow-auto p-4">
           <p className="mb-3 text-sm text-gray-400">
-            Finds duplicate images by file content (SHA-256). Exact byte-identical files are grouped.
+            {similar
+              ? "Finds images that look alike, so re-encoded, resized and lightly cropped copies are grouped too. Check each group before deleting."
+              : "Finds byte-identical files (SHA-256). A re-saved or resized copy will not be grouped \u2014 switch to Similar for those."}
           </p>
+
+          <div className="mb-3 flex flex-wrap items-center gap-4">
+            <div
+              role="group"
+              aria-label="Duplicate matching mode"
+              className="flex items-center gap-1 rounded border border-border p-0.5"
+            >
+              {([false, true] as const).map((mode) => (
+                <button
+                  key={String(mode)}
+                  type="button"
+                  aria-pressed={similar === mode}
+                  onClick={() => {
+                    setSimilar(mode);
+                    setGroups(null);
+                    setError(null);
+                  }}
+                  className={`rounded px-2.5 py-1 text-xs font-medium ${
+                    similar === mode
+                      ? "bg-blue-600 text-white"
+                      : "text-gray-400 hover:text-gray-200"
+                  }`}
+                >
+                  {mode ? "Similar" : "Exact"}
+                </button>
+              ))}
+            </div>
+
+            {similar && (
+              <label className="flex items-center gap-2 text-xs text-gray-400">
+                Sensitivity
+                <input
+                  type="range"
+                  min={1}
+                  max={12}
+                  step={1}
+                  value={distance}
+                  onChange={(e) => {
+                    setDistance(Number(e.target.value));
+                    setGroups(null);
+                  }}
+                  className="w-32"
+                />
+                <span className="w-4 tabular-nums text-gray-300">{distance}</span>
+                <span className="text-gray-500">higher groups more</span>
+              </label>
+            )}
+          </div>
 
           {groups === null && !error && (
             <button

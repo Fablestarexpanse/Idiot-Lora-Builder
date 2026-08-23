@@ -3,6 +3,37 @@
 All notable changes to Idiot LoRa Builder (formerly LoRA Dataset Studio) are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Similar-image duplicate detection.** The duplicate finder gains an
+  Exact / Similar toggle with a sensitivity slider. Exact (SHA-256,
+  byte-identical) stays the default; Similar uses a perceptual hash, so a
+  re-encoded, resized or lightly cropped copy is grouped too — cases the
+  content hash sees as unrelated files.
+- **Trigger word picked up from a generated dataset.** Opening a folder that
+  carries a generator's `metadata.json` (currently
+  [Dataset Deviser](https://github.com/EnragedAntelope/dataset-deviser))
+  offers the trigger word it recorded, instead of asking you to retype it.
+  Dismissible, never shown twice for the same folder, and skipped entirely
+  when the trigger word is locked. A missing or malformed `metadata.json` is
+  ignored and can never stop a folder opening.
+
+### Fixed
+
+- **Duplicate finder reported absolute paths instead of relative ones.** The
+  scan walked the raw project root while stripping the canonicalized one, so
+  the two disagreed whenever they differed — which on Windows is every scan,
+  because `canonicalize()` always returns a `\\?\` path. Deleting a duplicate
+  then resolved to a doubled path like `C:\ds\C:/ds/a.png`. Now walks from
+  the canonical root, matching `open_project`, `captions.rs` and `export.rs`.
+- **Find duplicates and single-image delete never reached the backend.** Both
+  passed their arguments under the wrong key, so Tauri rejected the call with
+  "missing required key" before the command ran: the duplicate scan failed
+  outright, and the grid tile's delete button (and the duplicate finder's own
+  per-file delete) did nothing.
+
 ## [0.7.0] - 2026-08-17
 
 Renamed to **Idiot LoRa Builder** (new unicorn logo, app icon, window title;
