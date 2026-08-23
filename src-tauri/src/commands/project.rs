@@ -184,7 +184,10 @@ pub struct FindDuplicatesResult {
 /// Difference hash: shrink to 9x8 greyscale and record, for each row, whether
 /// each pixel is brighter than the one to its right. The 64 bits that come out
 /// survive re-encoding and rescaling, which a content hash cannot.
-/// Returns None for anything that won't decode — advisory, never fatal.
+/// Returns None for anything that won't decode — advisory, never fatal, so an
+/// unreadable file is simply left ungrouped. Note `.bmp` is in
+/// `IMAGE_EXTENSIONS` but not in the `image` crate's enabled features, so bmps
+/// are skipped here (they still group in exact mode, which never decodes).
 fn dhash(path: &Path) -> Option<u64> {
     let img = ImageReader::open(path).ok()?.decode().ok()?;
     let small = imageops::resize(&img.to_luma8(), 9, 8, imageops::FilterType::Triangle);
@@ -267,8 +270,9 @@ fn find_duplicates_sync(payload: FindDuplicatesPayload) -> Result<FindDuplicates
 
     if payload.max_distance > 0 {
         // Perceptual mode. Hashing decodes each image, so it runs in parallel
-        // like the SHA-256 path, then groups sequentially to keep scan order
-        // stable (the first file in a group is the one worth keeping).
+        // like the SHA-256 path, then sorts by relative path before grouping:
+        // rayon's completion order is not stable, and the first file in a group
+        // is the one the UI offers to keep.
         let mut hashed: Vec<(String, u64)> = image_paths
             .par_iter()
             .filter_map(|path| {

@@ -25,15 +25,7 @@ A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, et
 - **Export** — Folder or ZIP; export all, selected, or by rating (good/bad/needs_edit subfolders); trigger word, sequential naming
 - **Send to Fizgig** — Handoff to a local [Fizgig](https://github.com/shootthesound/Fizgig) install (LoRA training workbench): a dialog lets you name the dataset and choose what to include (by rating, all, or current selection), then exports images + captions into Fizgig's own `dataset/<name>` folder (cleared on each send so demoted images never linger), launches Fizgig, and copies the path to your clipboard for its Start tab. Set the Fizgig folder under Settings → Integrations.
 - **Tools** — Find duplicates, either **exact** (SHA-256, byte-identical) or **similar** (perceptual hash, so re-encoded/resized/lightly-cropped copies are caught too) with per-file delete and keep-largest actions, dataset stats, clear all tags (type "clear" to confirm), clear all ratings
-
-## Where the images come from
-
-Bring your own folder, or generate one: **[Dataset Deviser](https://github.com/EnragedAntelope/dataset-deviser)**
-by [EnragedAntelope](https://github.com/EnragedAntelope) turns a single reference image into a
-full character or concept set, captions it, and exports the flat `NN.png` + `NN.txt` layout this
-app opens. Its exports arrive **already triaged** — it writes the same `.lora-studio/ratings.json`
-used here, marking blurry, badly-exposed and near-duplicate shots as *needs edit* — and the
-trigger word it recorded is offered when you open the folder, so there is nothing to retype.
+- **Generated datasets** — A folder built by [Dataset Deviser](https://github.com/EnragedAntelope/dataset-deviser) opens as-is: it writes the same flat `NN.png` + `NN.txt` layout, and the trigger word it recorded in `metadata.json` is offered when you open the folder rather than asking you to retype it. Where it also wrote a `.lora-studio/ratings.json`, that triage is read like your own.
 
 ## Performance
 

@@ -310,11 +310,16 @@ export function FindDuplicatesModal({ isOpen, onClose }: FindDuplicatesModalProp
           </p>
 
           <div className="mb-3 flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-1 rounded border border-border p-0.5">
+            <div
+              role="group"
+              aria-label="Duplicate matching mode"
+              className="flex items-center gap-1 rounded border border-border p-0.5"
+            >
               {([false, true] as const).map((mode) => (
                 <button
                   key={String(mode)}
                   type="button"
+                  aria-pressed={similar === mode}
                   onClick={() => {
                     setSimilar(mode);
                     setGroups(null);

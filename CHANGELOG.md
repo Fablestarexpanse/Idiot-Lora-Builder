@@ -34,11 +34,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   outright, and the grid tile's delete button (and the duplicate finder's own
   per-file delete) did nothing.
 
-### Notes
-
-- `project.rs` gained its first tests (11). Rust tests 47 → 65, frontend
-  167 → 178.
-
 ## [0.7.0] - 2026-08-17
 
 Renamed to **Idiot LoRa Builder** (new unicorn logo, app icon, window title;

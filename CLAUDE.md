@@ -57,16 +57,6 @@ caption, crop status) prefer `setQueryData` merges over full `invalidateQueries`
 refetches the whole project and thrashes the grid. Full invalidation is fine for bulk ops
 (clear-all, batch rename).
 
-## Built-in captioner (v0.6.0)
-
-- `models.rs` downloads the llama.cpp server runtime (pinned release tag) and Qwen3-VL GGUF
-  weights into `app_local_data_dir()/builtin/` with resume + progress events;
-  `llama_server.rs` manages the sidecar process and returns an OpenAI-compatible base URL.
-  The frontend reuses the existing LM Studio caption commands against that URL — do not add
-  a parallel caption client.
-- `detect_faces` runs real YuNet ONNX inference via `ort` (model auto-downloaded, session
-  cached globally). Failures return an empty list, never fabricated regions.
-
 ### 5. Walk from the canonical root
 Any scan that reports paths relative to the project root must `WalkDir` the **canonicalized**
 root, not the raw one. `strip_prefix(canonical)` silently fails otherwise and the key falls
@@ -80,6 +70,16 @@ no snake_case fallback and no spreading an args object across parameters. `fn f(
 takes `{ payload: {...} }`; `fn f(model_id: String)` takes `{ modelId }`. Get it wrong and the
 call is rejected with "missing required key" before the command body runs, so the feature looks
 merely broken rather than mis-wired. `find_duplicates` and `delete_image` were both wrong.
+
+## Built-in captioner (v0.6.0)
+
+- `models.rs` downloads the llama.cpp server runtime (pinned release tag) and Qwen3-VL GGUF
+  weights into `app_local_data_dir()/builtin/` with resume + progress events;
+  `llama_server.rs` manages the sidecar process and returns an OpenAI-compatible base URL.
+  The frontend reuses the existing LM Studio caption commands against that URL — do not add
+  a parallel caption client.
+- `detect_faces` runs real YuNet ONNX inference via `ort` (model auto-downloaded, session
+  cached globally). Failures return an empty list, never fabricated regions.
 
 ## Honesty notes
 
