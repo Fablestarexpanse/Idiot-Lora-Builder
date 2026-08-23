@@ -28,6 +28,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   because `canonicalize()` always returns a `\\?\` path. Deleting a duplicate
   then resolved to a doubled path like `C:\ds\C:/ds/a.png`. Now walks from
   the canonical root, matching `open_project`, `captions.rs` and `export.rs`.
+- **Find duplicates and single-image delete never reached the backend.** Both
+  passed their arguments under the wrong key, so Tauri rejected the call with
+  "missing required key" before the command ran: the duplicate scan failed
+  outright, and the grid tile's delete button (and the duplicate finder's own
+  per-file delete) did nothing.
 
 ### Notes
 

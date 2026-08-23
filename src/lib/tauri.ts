@@ -19,14 +19,16 @@ import type {
 
 /**
  * Tauri invoke payload convention:
- * - Commands that expect { payload: { ... } }: open_project, get_thumbnail, get_image_data_url,
- *   crop_image, read_caption, write_caption, add_tag, remove_tag, reorder_tags,
- *   test_lm_studio_connection, test_ollama_connection, generate_caption_lm_studio, generate_captions_batch,
- *   clear_all_ratings, set_rating, set_ratings_batch, get_ratings, batch_rename, delete_images,
- *   get_crop_statuses, batch_resize, read_dataset_metadata.
- * - Commands that expect the args object directly (no "payload" key): find_duplicates, delete_image,
- *   export_dataset, export_by_rating, get_builtin_status, download_builtin,
- *   ensure_builtin_server, delete_builtin_model.
+ * - There is one rule: each key in the args object is the *Rust parameter name*,
+ *   lowerCamelCased. Tauri looks that key up exactly (`ipc/command.rs`) and rejects
+ *   the call with "missing required key" if it isn't there — it does not fall back
+ *   to snake_case, and it never spreads the object across several parameters.
+ * - So `fn open_project(payload: OpenProjectPayload)` takes { payload: { ... } } —
+ *   most commands here — `fn export_dataset(options: ExportOptions)` takes
+ *   { options: { ... } }, and `fn download_builtin(model_id: String, ...)` takes
+ *   { modelId, ... }.
+ * - Fields *inside* a payload struct keep their Rust names (snake_case); only the
+ *   parameter name is cased by Tauri.
  * - No args: get_resource_stats, cancel_builtin_download, stop_builtin_server,
  *   get_builtin_server_status, open_log_folder.
  */
@@ -62,7 +64,6 @@ export interface FindDuplicatesResult {
   groups: string[][];
 }
 
-/** Find duplicate images by file content hash (SHA-256). */
 /**
  * Reads a generator's metadata.json from a project folder, if there is one we
  * recognise. Resolves to null for any folder that has none — never throws for
@@ -84,8 +85,7 @@ export async function findDuplicates(
   maxDistance = 0
 ): Promise<FindDuplicatesResult> {
   return invoke<FindDuplicatesResult>("find_duplicates", {
-    root_path: rootPath,
-    max_distance: maxDistance,
+    payload: { root_path: rootPath, max_distance: maxDistance },
   });
 }
 
@@ -166,7 +166,7 @@ export async function cropImage(
 
 /** Deletes an image file and its caption .txt from disk. */
 export async function deleteImage(imagePath: string): Promise<void> {
-  return invoke<void>("delete_image", { image_path: imagePath });
+  return invoke<void>("delete_image", { imagePath });
 }
 
 export interface DeleteImagesResult {

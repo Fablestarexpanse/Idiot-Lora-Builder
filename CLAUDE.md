@@ -74,6 +74,13 @@ back to an absolute path — and on Windows `canonicalize()` always returns a `\
 that is every scan, not an edge case. `open_project`, `captions.rs` and `export.rs` follow this;
 `find_duplicates` didn't, which is what made duplicate deletes build `C:\ds\C:/ds/a.png`.
 
+### 6. Invoke arg names are Rust parameter names
+Tauri looks each invoke key up **exactly**, lowerCamelCasing the Rust parameter name — there is
+no snake_case fallback and no spreading an args object across parameters. `fn f(payload: P)`
+takes `{ payload: {...} }`; `fn f(model_id: String)` takes `{ modelId }`. Get it wrong and the
+call is rejected with "missing required key" before the command body runs, so the feature looks
+merely broken rather than mis-wired. `find_duplicates` and `delete_image` were both wrong.
+
 ## Honesty notes
 
 - Duplicate finding is exact (SHA-256) by default; passing `max_distance > 0` switches it to
