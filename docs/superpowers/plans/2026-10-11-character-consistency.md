@@ -34,3 +34,8 @@ Review focus: baseline protection; failures vs no-face; moved files reappearing 
 User requested easy visual identification and selection like the existing Good/Bad ratings. Use matching red/amber/green borders and explicit Bad/Middle/Good badges, separate blue mark indicators, and group mark buttons. Bad follows the existing outlier cutoff; Good initially starts at 0.60 and is adjustable; Middle lies between them. These are review bands, not dataset ratings or model confidence. Baselines and unscored/ambiguous faces remain neutral and excluded from group marking. Group buttons replace current marks; moving still requires confirmation.
 
 Verification: all 189 frontend tests passed, production build and focused ESLint passed. Live native desktop showed red Bad, amber Middle and green Good cards; Bad/Good group marking replaced the prior selection, preserving baseline protection. No files moved during this check. Screenshot: consistency-colors.png in the current chat visualization directory.
+
+## Compare toolbar entry (2026-10-11)
+User requested the comparison tool beside Batch Rename and Batch Resize. Rename its toolbar entry to Compare, retaining its position immediately after Batch Resize and adding a descriptive tooltip. Allow the toolbar to grow when buttons wrap so lower rows remain visible in narrower windows. Verify in the desktop app and rebuild the launched version.
+
+Verification: production frontend build and desktop build passed. Launched the bundled app at tauri.localhost and verified the visible toolbar order is Batch Rename, Batch Resize, Compare. Saved compare-toolbar.png as live evidence. Updated app remains open for the user.

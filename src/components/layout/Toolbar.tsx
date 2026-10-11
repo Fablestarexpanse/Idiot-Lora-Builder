@@ -72,7 +72,7 @@ export function Toolbar() {
   return (
     <>
       <header
-        className={`flex h-12 min-w-0 shrink-0 flex-wrap items-center gap-2 border-b-2 border-border bg-surface-elevated px-3 ${ratingBorderClass}`}
+        className={`flex min-h-12 min-w-0 shrink-0 flex-wrap items-center gap-2 border-b-2 border-border bg-surface-elevated px-3 py-1 ${ratingBorderClass}`}
       >
         {/* Open */}
         <button
@@ -122,8 +122,8 @@ export function Toolbar() {
         </button>
 
 
-        <button type="button" className="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium text-gray-200 hover:bg-blue-600/20 hover:text-blue-300 disabled:opacity-50" aria-label="Check character consistency" disabled={!rootPath} onClick={() => setShowConsistency(true)}>
-          <ScanFace className="h-4 w-4" />Consistency
+        <button type="button" className="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium text-gray-200 hover:bg-blue-600/20 hover:text-blue-300 disabled:opacity-50" aria-label="Compare" title="Compare character consistency against baseline images" disabled={!rootPath} onClick={() => setShowConsistency(true)}>
+          <ScanFace className="h-4 w-4" />Compare
         </button>
 
         {/* Clear all tags */}
