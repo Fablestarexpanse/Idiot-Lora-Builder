@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
-import { ScanFace, Loader2, FolderInput, Undo2, X, ZoomIn } from "lucide-react";
+import { ScanFace, Loader2, Check, Undo2, X, ZoomIn } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
-import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useProjectImages } from "@/hooks/useProject";
@@ -13,12 +12,14 @@ import {
   suggestedMarks,
   type ConsistencyBand,
 } from "@/lib/consistency";
+import type { ImageEntry } from "@/types";
 import { withThumbnailInvokeLimit } from "@/lib/thumbnailInvokeLimit";
 import {
   loadConsistency,
   scanConsistency,
   cancelConsistencyScan,
-  excludeConsistency,
+  setRatingsBatch,
+  type RatingChange,
   undoConsistencyExclusion,
   chooseConsistencyBaselines,
   ensureThumbnailUrl,
@@ -29,11 +30,11 @@ import {
 const button =
   "rounded border border-border bg-surface px-3 py-1.5 text-xs font-medium text-gray-200 hover:bg-white/10 disabled:opacity-40";
 const PAGE_SIZE = 60;
-const bands: ConsistencyBand[] = ["bad", "middle", "good"];
+const bands: ConsistencyBand[] = ["good", "bad", "needs_edit"];
 const bandStyle = {
   bad: { label: "Bad", card: "border-red-500 bg-red-500/5", badge: "bg-red-600 text-white" },
-  middle: {
-    label: "Middle",
+  needs_edit: {
+    label: "Needs Edit",
     card: "border-amber-500 bg-amber-500/5",
     badge: "bg-amber-600 text-white",
   },
@@ -83,12 +84,12 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
   const [marked, setMarked] = useState<Set<string>>(new Set());
   const [cutoff, setCutoff] = useState(0.25);
   const [goodFrom, setGoodFrom] = useState(0.6);
-  const [busy, setBusy] = useState<"scan" | "move" | "undo" | "load" | null>(null);
+  const [busy, setBusy] = useState<"scan" | "rate" | "undo" | "load" | null>(null);
   const [progress, setProgress] = useState({ current: 0, total: 0, phase: "" });
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [canUndo, setCanUndo] = useState(false);
-  const [confirmMove, setConfirmMove] = useState(false);
+  const [ratingOverrides, setRatingOverrides] = useState<Record<string, ConsistencyBand>>({});
   const [preview, setPreview] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [referenceSlot, setReferenceSlot] = useState<number | null>(null);
@@ -114,6 +115,7 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
     setBaselines(["", "", ""]);
     setReferenceSlot(null);
     setMarked(new Set());
+    setRatingOverrides({});
     setCanUndo(false);
     loadConsistency(rootPath)
       .then((result) => {
@@ -147,6 +149,7 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
     setBaselines([0, 1, 2].map((i) => next[i] ?? ""));
     setScan(null);
     setMarked(new Set());
+    setRatingOverrides({});
     setMessage("");
     setError("");
   }
@@ -211,11 +214,12 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
       setScan(result);
       setCanUndo(result.can_undo);
       setMarked(new Set());
+      setRatingOverrides({});
       setCutoff(result.suggested_cutoff ?? 0.25);
       setGoodFrom(Math.max(0.6, result.suggested_cutoff ?? 0.25));
       setPage(0);
       setMessage(
-        "Scan complete. Review the lowest scores or use Suggest outliers. Nothing has been moved."
+        "Scan complete. Review Good, Bad and Needs Edit suggestions, then apply ratings to your dataset."
       );
     } catch (e) {
       setError(errorText(e));
@@ -229,13 +233,52 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
     setGoodFrom((previous) => Math.max(previous, value));
     setMarked(suggestedMarks(rows, value));
   }
+  function ratingFor(score: ConsistencyScore): ConsistencyBand | null {
+    return score.baseline
+      ? null
+      : (ratingOverrides[score.relative_path] ?? consistencyBand(score, cutoff, goodFrom));
+  }
+  const ratingChanges: RatingChange[] = rows.flatMap((score) => {
+    const rating = ratingFor(score);
+    return rating && imagePaths.has(score.relative_path)
+      ? [{ relative_path: score.relative_path, rating }]
+      : [];
+  });
+  const selectedRatingChanges = ratingChanges.filter((change) => marked.has(change.relative_path));
+  async function applyRatings(selectedOnly: boolean) {
+    if (!rootPath) return;
+    const changes = selectedOnly ? selectedRatingChanges : ratingChanges;
+    if (!changes.length) return;
+    setBusy("rate");
+    setError("");
+    setMessage("");
+    try {
+      await setRatingsBatch(rootPath, changes);
+      const byPath = new Map(changes.map((change) => [change.relative_path, change.rating]));
+      queryClient.setQueryData<ImageEntry[]>(["project", "images", rootPath], (old) =>
+        old?.map((image) => {
+          const rating = byPath.get(image.relative_path);
+          return rating ? { ...image, rating } : image;
+        })
+      );
+      if (useProjectStore.getState().rootPath === rootPath) {
+        const selection = useSelectionStore.getState();
+        const image = selection.selectedImage;
+        const rating = image && byPath.get(image.relative_path);
+        if (image && rating) selection.setSelectedImage({ ...image, rating });
+      }
+      setMessage(
+        `${changes.length} dataset ratings saved. Close Compare to see them on the main page.`
+      );
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
   function markBand(band: ConsistencyBand) {
     setMarked(
-      new Set(
-        rows
-          .filter((score) => consistencyBand(score, cutoff, goodFrom) === band)
-          .map((score) => score.relative_path)
-      )
+      new Set(rows.filter((score) => ratingFor(score) === band).map((score) => score.relative_path))
     );
   }
   function toggle(score: ConsistencyScore) {
@@ -247,26 +290,21 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
       return next;
     });
   }
-  async function moveOrUndo(undo: boolean) {
+  async function undoExclusion() {
     if (!rootPath) return;
-    setBusy(undo ? "undo" : "move");
+    setBusy("undo");
     setError("");
     setMessage("");
     try {
-      const result = undo
-        ? await undoConsistencyExclusion(rootPath)
-        : await excludeConsistency(rootPath, [...marked]);
+      const result = await undoConsistencyExclusion(rootPath);
       setCanUndo(result.can_undo);
-      setConfirmMove(false);
       setMarked(new Set());
       // A bulk filesystem change needs a fresh image list; selection reconciles on refetch.
       await queryClient.invalidateQueries({ queryKey: ["project", "images", rootPath] });
       const refreshed = await loadConsistency(rootPath);
       setScan(refreshed);
       setCanUndo(refreshed.can_undo);
-      setMessage(
-        `${result.moved.length} image(s) ${undo ? "restored" : "moved with their captions to excluded_by_look"}.`
-      );
+      setMessage(`${result.moved.length} image(s) restored.`);
       if (result.errors.length) setError(result.errors.join("\n"));
     } catch (e) {
       setError(errorText(e));
@@ -277,7 +315,7 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
   return (
     <>
       <Modal
-        isOpen={isOpen && !preview && !confirmMove && referenceSlot === null}
+        isOpen={isOpen && !preview && referenceSlot === null}
         onClose={onClose}
         title="Consistency Check"
         icon={<ScanFace className="h-5 w-5" />}
@@ -286,24 +324,29 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
         footer={
           <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-3">
             <span className="text-xs text-gray-400">
-              {marked.size} marked / originals are preserved in an excluded folder
+              {marked.size} selected / apply ratings to show them on the main page
             </span>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              {canUndo && (
+                <button className={button} disabled={!!busy} onClick={() => void undoExclusion()}>
+                  <Undo2 className="mr-1 inline h-3.5 w-3.5" />
+                  Undo previous exclusion
+                </button>
+              )}
               <button
                 className={button}
-                disabled={!canUndo || !!busy}
-                onClick={() => void moveOrUndo(true)}
+                disabled={!selectedRatingChanges.length || !!busy}
+                onClick={() => void applyRatings(true)}
               >
-                <Undo2 className="mr-1 inline h-3.5 w-3.5" />
-                Undo last exclusion
+                Apply selected ratings
               </button>
               <button
-                className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-500 disabled:opacity-40"
-                disabled={!marked.size || !!busy}
-                onClick={() => setConfirmMove(true)}
+                className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40"
+                disabled={!ratingChanges.length || !!busy}
+                onClick={() => void applyRatings(false)}
               >
-                <FolderInput className="mr-1 inline h-4 w-4" />
-                Move marked out
+                <Check className="mr-1 inline h-4 w-4" />
+                Apply all ratings
               </button>
             </div>
           </div>
@@ -483,9 +526,7 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
               </label>
               <div className="flex w-full flex-wrap gap-2">
                 {bands.map((band) => {
-                  const count = rows.filter(
-                    (score) => consistencyBand(score, cutoff, goodFrom) === band
-                  ).length;
+                  const count = rows.filter((score) => ratingFor(score) === band).length;
                   return (
                     <button
                       key={band}
@@ -493,12 +534,13 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
                       disabled={!!busy || !count}
                       onClick={() => markBand(band)}
                     >
-                      Mark all {bandStyle[band].label.toLowerCase()} ({count})
+                      Select all {bandStyle[band].label.toLowerCase()} ({count})
                     </button>
                   );
                 })}
                 <span className="self-center text-xs text-gray-400">
-                  Group buttons replace the current marks. Middle sits between the two cutoffs.
+                  Needs Edit sits between the cutoffs. Group buttons replace the selection; applying
+                  ratings updates existing dataset ratings.
                 </span>
               </div>
               <button
@@ -506,12 +548,12 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
                 disabled={!!busy || !marked.size}
                 onClick={() => setMarked(new Set())}
               >
-                Clear marks
+                Clear selection
               </button>
               <span className="w-full text-xs text-gray-500">
                 {scan?.suggested_cutoff == null
-                  ? "At least four scored faces are needed for automatic suggestions. You can adjust the cutoff or mark by eye."
-                  : `Suggested cutoff ${scan.suggested_cutoff.toFixed(2)} / lowest matches first. Baselines, multiple-face images, and unscored images are never automatically marked.`}
+                  ? "At least four scored faces are needed for automatic suggestions. You can adjust the cutoff or rate by eye."
+                  : `Suggested cutoff ${scan.suggested_cutoff.toFixed(2)} / lowest matches first. Baselines, multiple-face images, and unscored images are never automatically rated.`}
               </span>
             </div>
           )}
@@ -526,11 +568,11 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {rows.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map((score) => {
-                const band = consistencyBand(score, cutoff, goodFrom);
+                const band = ratingFor(score);
                 return (
                   <article
                     key={score.relative_path}
-                    aria-label={`${score.relative_path}: ${band ? bandStyle[band].label : score.baseline ? "Baseline" : "Review"}${marked.has(score.relative_path) ? ", marked" : ""}`}
+                    aria-label={`${score.relative_path}: ${band ? bandStyle[band].label : score.baseline ? "Baseline" : "Review"}${marked.has(score.relative_path) ? ", selected" : ""}`}
                     className={`overflow-hidden rounded border-2 ${band ? bandStyle[band].card : "border-border bg-surface"} ${marked.has(score.relative_path) ? "ring-2 ring-blue-400 ring-offset-2 ring-offset-surface" : ""}`}
                   >
                     <button
@@ -550,9 +592,32 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
                           {band ? bandStyle[band].label : score.baseline ? "Baseline" : "Review"}
                         </span>
                         {marked.has(score.relative_path) && (
-                          <span className="text-blue-300">Marked</span>
+                          <span className="text-blue-300">Selected</span>
                         )}
                       </div>
+                      {!score.baseline && (
+                        <select
+                          aria-label={`Rating for ${score.relative_path}`}
+                          value={ratingOverrides[score.relative_path] ?? "suggested"}
+                          disabled={!!busy}
+                          className="w-full rounded border border-border bg-surface px-2 py-1 text-xs text-gray-200"
+                          onChange={(event) =>
+                            setRatingOverrides((previous) => {
+                              const next = { ...previous };
+                              if (event.target.value === "suggested")
+                                delete next[score.relative_path];
+                              else
+                                next[score.relative_path] = event.target.value as ConsistencyBand;
+                              return next;
+                            })
+                          }
+                        >
+                          <option value="suggested">Use comparison suggestion</option>
+                          <option value="good">Good</option>
+                          <option value="bad">Bad</option>
+                          <option value="needs_edit">Needs Edit</option>
+                        </select>
+                      )}
                       <p className="truncate text-xs text-gray-300" title={score.relative_path}>
                         {score.relative_path}
                       </p>
@@ -568,8 +633,8 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
                           {score.baseline
                             ? "Baseline"
                             : marked.has(score.relative_path)
-                              ? "Keep"
-                              : "Mark"}
+                              ? "Deselect"
+                              : "Select"}
                         </button>
                       </div>
                       <p className="text-[11px] text-gray-500" title={score.error ?? ""}>
@@ -690,27 +755,6 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
           {preview && <Thumbnail path={preview} size={1024} />}
         </div>
       </Modal>
-      <ConfirmModal
-        isOpen={confirmMove}
-        onCancel={() => setConfirmMove(false)}
-        onConfirm={() => void moveOrUndo(false)}
-        title="Move marked images out?"
-        confirmLabel={`Move ${marked.size} images`}
-        confirmButtonClassName="bg-amber-600 hover:bg-amber-500"
-        isPending={busy === "move"}
-        closeDisabled={busy === "move"}
-      >
-        <p className="text-sm text-gray-300">
-          Move {marked.size} marked images and their matching captions to{" "}
-          <span className="font-mono">excluded_by_look</span>. They will no longer appear in the
-          active dataset. Nothing is deleted, and you can undo the exclusion.
-        </p>
-        {error && (
-          <p role="alert" className="whitespace-pre-wrap text-xs text-amber-300">
-            {error}
-          </p>
-        )}
-      </ConfirmModal>
     </>
   );
 }

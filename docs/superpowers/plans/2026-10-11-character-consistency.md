@@ -1,4 +1,4 @@
-NEXT: Color bands and group marking verified in the live desktop app; commit locally and report. No push requested for this step.
+NEXT: Dataset-rating workflow verified in the native app; commit locally and reopen the updated app for the user.
 
 # Character consistency implementation plan
 
@@ -44,3 +44,8 @@ Verification: production frontend build and desktop build passed. Launched the b
 User requested clicking each reference box to choose from the already-loaded archive while retaining external files as an option. Implement a searchable, paginated thumbnail picker per slot, filled-slot replacement, duplicate prevention, separate preview buttons, and explicit close behavior. Preserve slot positions when filling or clearing them; changed references invalidate old scores.
 
 Verification: 191 frontend tests passed, production build, focused ESLint and bundled desktop build passed. Live native app on a disposable dataset verified per-slot replacement, search, canonical duplicate protection and returning via explicit close. Screenshot: dataset-reference-picker.png. No scans or file moves performed in the live check.
+
+## Dataset ratings instead of exclusions (2026-10-11)
+User requested Compare use the existing Good/Bad/Needs Edit naming and save those ratings to the main dataset instead of moving images out. Replace the move action with Apply all ratings and Apply selected ratings, using the existing batch rating command and cache merges. Allow manual per-image rating overrides, skip baselines and ambiguous/unscored images unless manually rated, and retain restore-only access for earlier exclusions. Save only loaded images; existing ratings on other images remain unchanged.
+
+Verification: all 192 frontend tests passed, production frontend build, focused ESLint and bundled desktop build passed. Live native app saved five comparison ratings on the disposable dataset, confirmed Good/Bad/Needs Edit via the backend disk read, and verified red Bad and amber Needs Edit cards immediately on the main page without refetching. Baseline and unscored existing ratings remained unchanged; all nine images remained in place. Screenshots: compare-dataset-ratings.png and main-dataset-ratings.png.

@@ -23,7 +23,7 @@ export function lowestFirst(scores: ConsistencyScore[]): ConsistencyScore[] {
   );
 }
 
-export type ConsistencyBand = "bad" | "middle" | "good";
+export type ConsistencyBand = "bad" | "needs_edit" | "good";
 
 export function consistencyBand(
   score: ConsistencyScore,
@@ -33,5 +33,5 @@ export function consistencyBand(
   if (score.baseline || score.error || score.face_count !== 1 || score.similarity === null)
     return null;
   if (score.similarity < badBelow) return "bad";
-  return score.similarity < goodFrom ? "middle" : "good";
+  return score.similarity < goodFrom ? "needs_edit" : "good";
 }

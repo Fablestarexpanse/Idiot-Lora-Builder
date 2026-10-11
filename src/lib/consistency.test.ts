@@ -39,7 +39,7 @@ describe("consistency review", () => {
 
 it("assigns inclusive band boundaries and leaves protected or ambiguous images neutral", () => {
   expect(consistencyBand(row("bad", 0.24), 0.25, 0.6)).toBe("bad");
-  expect(consistencyBand(row("middle", 0.25), 0.25, 0.6)).toBe("middle");
+  expect(consistencyBand(row("middle", 0.25), 0.25, 0.6)).toBe("needs_edit");
   expect(consistencyBand(row("good", 0.6), 0.25, 0.6)).toBe("good");
   for (const score of [
     row("base", 0.1, { baseline: true }),
