@@ -135,7 +135,7 @@ fn export_dataset_sync(options: ExportOptions) -> Result<ExportResult, String> {
         // require the result to stay inside the source root (rejects "../" traversal).
         for rel in relative_paths {
             let normalized = normalize_rel(rel);
-            if normalized.is_empty() {
+            if normalized.is_empty() || normalized.split('/').any(|part| part.eq_ignore_ascii_case("excluded_by_look") || part.eq_ignore_ascii_case(".lora-studio")) {
                 continue;
             }
             let full = canonical_source.join(&normalized);
@@ -156,7 +156,7 @@ fn export_dataset_sync(options: ExportOptions) -> Result<ExportResult, String> {
         }
     } else {
         // No filter: walk entire source and add all (subject to only_captioned)
-        for entry in WalkDir::new(&canonical_source).follow_links(false).into_iter().filter_map(Result::ok) {
+        for entry in WalkDir::new(&canonical_source).follow_links(false).into_iter().filter_entry(super::consistency_files::excluded_entry).filter_map(Result::ok) {
             let p = entry.path();
             if !p.is_file() || !is_image(p) {
                 continue;
@@ -427,7 +427,7 @@ fn export_by_rating_sync(options: ExportByRatingOptions) -> Result<ExportResult,
     .collect();
 
     // Walk from canonical so strip_prefix(canonical) always succeeds and matches how project stores relative_path.
-    for entry in WalkDir::new(&canonical).follow_links(false).into_iter().filter_map(Result::ok) {
+    for entry in WalkDir::new(&canonical).follow_links(false).into_iter().filter_entry(super::consistency_files::excluded_entry).filter_map(Result::ok) {
         let p = entry.path();
         if !p.is_file() || !is_image(p) {
             continue;
@@ -501,6 +501,19 @@ fn export_by_rating_sync(options: ExportByRatingOptions) -> Result<ExportResult,
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn exports_do_not_reinclude_excluded_images() {
+        let source=tempfile::tempdir().unwrap();let out=tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(source.path().join("excluded_by_look/batch")).unwrap();
+        for name in ["active.png","excluded_by_look/batch/drift.png"] {std::fs::write(source.path().join(name),b"image").unwrap();}
+        std::fs::create_dir_all(source.path().join(".lora-studio")).unwrap();
+        std::fs::write(source.path().join(".lora-studio/ratings.json"),r#"{"ratings":{"active.png":"good","excluded_by_look/batch/drift.png":"good"}}"#).unwrap();
+        let options:ExportOptions=serde_json::from_value(serde_json::json!({"source_path":source.path(),"dest_path":out.path().join("all")})).unwrap();
+        assert_eq!(export_dataset_sync(options).unwrap().exported_count,1);
+        let options:ExportByRatingOptions=serde_json::from_value(serde_json::json!({"source_path":source.path(),"dest_path":out.path().join("rated")})).unwrap();
+        assert_eq!(export_by_rating_sync(options).unwrap().exported_count,1);
+    }
+
 
     // ---- normalize_rel: traversal attempts and separator handling ----
 

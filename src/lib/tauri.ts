@@ -569,3 +569,37 @@ export async function setCropStatus(
 export async function openLogFolder(): Promise<void> {
   return invoke<void>("open_log_folder");
 }
+
+// ============ Character consistency ============
+export interface ConsistencyScore {
+  relative_path: string;
+  similarity: number | null;
+  face_count: number;
+  error: string | null;
+  baseline: boolean;
+}
+export interface ConsistencyScan {
+  baselines: { path: string }[];
+  scores: ConsistencyScore[];
+  suggested_cutoff: number | null;
+  can_undo: boolean;
+  model: string;
+}
+export interface ConsistencyMoveResult { moved: string[]; errors: string[]; can_undo: boolean }
+export function loadConsistency(rootPath: string): Promise<ConsistencyScan> {
+  return invoke("load_consistency", { payload: { root_path: rootPath } });
+}
+export function scanConsistency(rootPath: string, baselinePaths: string[], relativePaths: string[]): Promise<ConsistencyScan> {
+  return invoke("scan_consistency", { payload: { root_path: rootPath, baseline_paths: baselinePaths, relative_paths: relativePaths } });
+}
+export function cancelConsistencyScan(): Promise<void> { return invoke("cancel_consistency_scan"); }
+export function excludeConsistency(rootPath: string, relativePaths: string[]): Promise<ConsistencyMoveResult> {
+  return invoke("exclude_consistency", { payload: { root_path: rootPath, relative_paths: relativePaths } });
+}
+export function undoConsistencyExclusion(rootPath: string): Promise<ConsistencyMoveResult> {
+  return invoke("undo_consistency_exclusion", { payload: { root_path: rootPath } });
+}
+export async function chooseConsistencyBaselines(): Promise<string[]> {
+  const result = await open({ multiple: true, directory: false, title: "Choose baseline images", filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "bmp"] }] });
+  return result === null ? [] : Array.isArray(result) ? result : [result];
+}

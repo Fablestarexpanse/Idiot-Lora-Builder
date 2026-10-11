@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { FolderOpen, Download, FileEdit, Scaling, Settings, HelpCircle, Eraser, StarOff, Rocket } from "lucide-react";
+import { FolderOpen, Download, FileEdit, Scaling, Settings, HelpCircle, Eraser, StarOff, Rocket, ScanFace } from "lucide-react";
 import { useProjectStore } from "@/stores/projectStore";
 import { useUiStore } from "@/stores/uiStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { openFolder } from "@/lib/tauri";
 import { SendToFizgigModal } from "../fizgig/SendToFizgigModal";
+import { ConsistencyModal } from "../project/ConsistencyModal";
 import { ExportModal } from "../export/ExportModal";
 import { BatchRenameModal } from "../rename/BatchRenameModal";
 import { BatchResizeModal } from "../resize/BatchResizeModal";
@@ -35,6 +36,7 @@ export function Toolbar() {
           ? "border-b-amber-500"
           : "border-b-border";
 
+  const [showConsistency, setShowConsistency] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showBatchRename, setShowBatchRename] = useState(false);
   const [showBatchResize, setShowBatchResize] = useState(false);
@@ -120,6 +122,10 @@ export function Toolbar() {
         </button>
 
 
+        <button type="button" className="flex items-center gap-2 rounded px-3 py-1.5 text-sm font-medium text-gray-200 hover:bg-blue-600/20 hover:text-blue-300 disabled:opacity-50" aria-label="Check character consistency" disabled={!rootPath} onClick={() => setShowConsistency(true)}>
+          <ScanFace className="h-4 w-4" />Consistency
+        </button>
+
         {/* Clear all tags */}
         <button
           type="button"
@@ -188,6 +194,7 @@ export function Toolbar() {
       </header>
 
       {/* Modals */}
+      <ConsistencyModal key={rootPath} isOpen={showConsistency} onClose={() => setShowConsistency(false)} />
       <ExportModal isOpen={showExport} onClose={() => setShowExport(false)} />
       <BatchRenameModal isOpen={showBatchRename} onClose={() => setShowBatchRename(false)} />
       <BatchResizeModal isOpen={showBatchResize} onClose={() => setShowBatchResize(false)} />

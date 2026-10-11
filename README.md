@@ -23,6 +23,8 @@ A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, et
 - **Batch rename** — Rename image + caption pairs with a pattern and sequential numbering
 - **Batch resize** — Resize / center-crop / fit to a target size (512/768/1024 presets) for all, selected, or Good-rated images; outputs to a folder with captions copied
 - **Export** — Folder or ZIP; export all, selected, or by rating (good/bad/needs_edit subfolders); trigger word, sequential naming
+- **Character consistency** - Choose three references from selected dataset images, external files, or both. Scan locally with InsightFace buffalo_l / ArcFace, review lowest scores first, suggest outliers, and adjust a similarity cutoff. Mark or keep images before moving them and their captions to `excluded_by_look`; Undo restores the last exclusion without overwriting occupied original paths. Excluded folders are skipped by dataset scans, exports, duplicate checks, and bulk caption clearing. Saved scores invalidate when images or references change. Human faces are the supported starting point; nonhuman and illustrated faces are experimental.
+
 - **Send to Fizgig** — Handoff to a local [Fizgig](https://github.com/shootthesound/Fizgig) install (LoRA training workbench): a dialog lets you name the dataset and choose what to include (by rating, all, or current selection), then exports images + captions into Fizgig's own `dataset/<name>` folder (cleared on each send so demoted images never linger), launches Fizgig, and copies the path to your clipboard for its Start tab. Set the Fizgig folder under Settings → Integrations.
 - **Tools** — Find duplicates, either **exact** (SHA-256, byte-identical) or **similar** (perceptual hash, so re-encoded/resized/lightly-cropped copies are caught too) with per-file delete and keep-largest actions, dataset stats, clear all tags (type "clear" to confirm), clear all ratings
 
@@ -182,3 +184,9 @@ The frontend never touches the filesystem directly — every operation goes thro
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+### Consistency checker credits and models
+
+The baseline-comparison and outlier-review workflow is inspired by [Fizgig](https://github.com/shootthesound/Fizgig). The interface and implementation are native to Idiot LoRa Builder. Inference uses [InsightFace buffalo_l](https://github.com/deepinsight/insightface), running SCRFD detection and ArcFace recognition on the CPU through ONNX Runtime. InsightFace code is MIT licensed; its pretrained models are offered under the upstream noncommercial research terms. Models are downloaded on first scan, or reused from the standard `.insightface/models/buffalo_l` cache if already installed. The models are not bundled with the application.
+
+Scores are the average cosine similarity against all three references, not identity probabilities. Auto-Suggest matches Fizgig's index-based statistics: `max(scores[n/2] - 1.5 * (scores[3*n/4] - scores[n/4]), 0.25)` after sorting, with integer indices and at least four scored images. Baselines, images without a scored face, and multiple-face images are never automatically marked. Multiple-face images use the largest face for the displayed score and require manual review. A scan alone never moves files.

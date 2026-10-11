@@ -176,6 +176,7 @@ pub fn clear_all_captions(payload: ClearAllCaptionsPayload) -> Result<ClearAllCa
     for entry in WalkDir::new(&canonical)
         .follow_links(false)
         .into_iter()
+        .filter_entry(super::consistency_files::excluded_entry)
         .filter_map(Result::ok)
     {
         let p = entry.path();
@@ -244,4 +245,21 @@ fn get_captions_batch_sync(payload: GetCaptionsBatchPayload) -> Result<CaptionsB
         .collect();
 
     Ok(CaptionsBatchResult { captions })
+}
+
+#[cfg(test)]
+mod exclusion_tests {
+    use super::*;
+    #[test]
+    fn clear_all_preserves_excluded_captions() {
+        let dir=tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("excluded_by_look/batch")).unwrap();
+        for name in ["active","excluded_by_look/batch/drift"] {
+            std::fs::write(dir.path().join(format!("{name}.png")),b"image").unwrap();
+            std::fs::write(dir.path().join(format!("{name}.txt")),"caption").unwrap();
+        }
+        let result=clear_all_captions(ClearAllCaptionsPayload{root_path:dir.path().to_string_lossy().into()}).unwrap();
+        assert_eq!(result.cleared_count,1);
+        assert_eq!(std::fs::read_to_string(dir.path().join("excluded_by_look/batch/drift.txt")).unwrap(),"caption");
+    }
 }

@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Character Consistency Check with mixed dataset/external baselines, local buffalo_l / ArcFace scoring, Fizgig-style suggestions, adjustable cutoff, manual review, previews, and reversible image/caption exclusions. Excluded files stay out of dataset scans, exports, duplicate checks, and bulk caption clearing.
+
+
 - **Similar-image duplicate detection.** The duplicate finder gains an
   Exact / Similar toggle with a sensitivity slider. Exact (SHA-256,
   byte-identical) stays the default; Similar uses a perceptual hash, so a

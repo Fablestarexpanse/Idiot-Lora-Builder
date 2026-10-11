@@ -16,3 +16,7 @@ pub mod models;
 pub mod ollama;
 pub mod project;
 pub mod ratings;
+
+pub mod consistency;
+pub mod consistency_files;
+pub mod face_embedding;

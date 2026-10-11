@@ -90,6 +90,7 @@ fn open_project_sync(app: AppHandle, payload: OpenProjectPayload) -> Result<Vec<
     let image_paths: Vec<PathBuf> = WalkDir::new(&canonical_root)
         .follow_links(false)
         .into_iter()
+        .filter_entry(super::consistency_files::excluded_entry)
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file() && is_image_path(e.path()))
         .map(|e| e.into_path())
@@ -251,6 +252,7 @@ fn find_duplicates_sync(payload: FindDuplicatesPayload) -> Result<FindDuplicates
     let image_paths: Vec<PathBuf> = WalkDir::new(&canonical_root)
         .follow_links(false)
         .into_iter()
+        .filter_entry(super::consistency_files::excluded_entry)
         .filter_map(|e| e.ok())
         .filter(|entry| {
             let path = entry.path();
@@ -373,6 +375,15 @@ mod tests {
     use super::*;
     use image::{ImageBuffer, Rgb};
     use std::path::Path;
+
+    #[test]
+    fn duplicate_scan_skips_excluded_and_metadata_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        write_image(&dir.path().join("active.png"), 9);
+        write_image(&dir.path().join("excluded_by_look/batch/excluded.png"), 9);
+        write_image(&dir.path().join(".lora-studio/private.png"), 9);
+        assert!(find_dupes(dir.path().to_str().unwrap()).is_empty());
+    }
 
     /// Writes a small image whose pixels vary with `seed`, so distinct seeds
     /// produce visibly distinct images (and distinct content hashes).

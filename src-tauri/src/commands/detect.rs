@@ -41,7 +41,7 @@ static YUNET_SESSION: Lazy<Mutex<Option<Session>>> = Lazy::new(|| Mutex::new(Non
 /// Validates the path first — handing a bad path to init_from can hang.
 static ORT_INIT: Lazy<Mutex<Option<Result<(), String>>>> = Lazy::new(|| Mutex::new(None));
 
-fn init_ort_once(dylib_path: &Path) -> Result<(), String> {
+pub(super) fn init_ort_once(dylib_path: &Path) -> Result<(), String> {
     let mut guard = ORT_INIT.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(prev) = guard.as_ref() {
         return prev.clone();
