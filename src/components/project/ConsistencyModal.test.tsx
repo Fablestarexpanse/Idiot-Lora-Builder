@@ -6,6 +6,7 @@ import { useProjectStore } from "@/stores/projectStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import type { ConsistencyScan } from "@/lib/tauri";
 const api = vi.hoisted(() => ({
+  projectImages: vi.fn(),
   loadConsistency: vi.fn(),
   scanConsistency: vi.fn(),
   excludeConsistency: vi.fn(),
@@ -20,14 +21,7 @@ vi.mock("@/lib/tauri", () => ({
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
 vi.mock("@/hooks/useProject", () => ({
   useProjectImages: () => ({
-    data: [
-      {
-        id: "selected",
-        path: "C:/dataset/base3.png",
-        relative_path: "base3.png",
-        filename: "base3.png",
-      },
-    ],
+    data: api.projectImages(),
   }),
 }));
 import { ConsistencyModal } from "./ConsistencyModal";
@@ -57,6 +51,14 @@ function mount() {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  api.projectImages.mockReturnValue([
+    {
+      id: "selected",
+      path: "C:/dataset/base3.png",
+      relative_path: "base3.png",
+      filename: "base3.png",
+    },
+  ]);
   useProjectStore.setState({ rootPath: "C:/dataset" });
   useSelectionStore.setState({ selectedIds: new Set(["selected"]) });
   api.loadConsistency.mockResolvedValue(saved());
@@ -158,4 +160,77 @@ it("colors score bands and replaces marks by group without moving files", async 
     "ring-blue-400"
   );
   expect(api.excludeConsistency).not.toHaveBeenCalled();
+});
+
+it("picks exact reference slots from the dataset, protects duplicates, and replaces a filled slot", async () => {
+  api.projectImages.mockReturnValue(
+    ["one", "two", "three", "four"].map((name) => ({
+      id: name,
+      path: `C:/dataset/${name}.png`,
+      relative_path: `${name}.png`,
+      filename: `${name}.png`,
+    }))
+  );
+  api.loadConsistency.mockResolvedValue({
+    ...saved(),
+    baselines: [],
+    scores: [],
+    suggested_cutoff: null,
+  });
+  const user = userEvent.setup();
+  const onClose = mount();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Choose reference 3 from dataset" })).toBeEnabled()
+  );
+  await user.click(screen.getByRole("button", { name: "Choose reference 3 from dataset" }));
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(
+    screen.getByRole("dialog", { name: "Choose reference 3 from dataset" })
+  ).toBeInTheDocument();
+  await user.type(screen.getByRole("textbox", { name: "Search dataset references" }), "three");
+  expect(
+    screen.queryByRole("button", { name: "Use one.png as reference" })
+  ).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Use three.png as reference" }));
+  expect(screen.getByRole("button", { name: "Preview baseline 3" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Scan 4 images" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Choose reference 1 from dataset" }));
+  expect(screen.getByRole("button", { name: "Use three.png as reference" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Use one.png as reference" }));
+  await user.click(screen.getByRole("button", { name: "Choose reference 2 from dataset" }));
+  await user.click(screen.getByRole("button", { name: "Use two.png as reference" }));
+  await user.click(screen.getByRole("button", { name: "Choose reference 2 from dataset" }));
+  await user.click(screen.getByRole("button", { name: "Use four.png as reference" }));
+  await user.click(screen.getByRole("button", { name: "Scan 4 images" }));
+  await waitFor(() =>
+    expect(api.scanConsistency).toHaveBeenCalledWith(
+      "C:/dataset",
+      ["C:/dataset/one.png", "C:/dataset/four.png", "C:/dataset/three.png"],
+      ["one.png", "two.png", "three.png", "four.png"]
+    )
+  );
+  expect(api.chooseConsistencyBaselines).not.toHaveBeenCalled();
+  expect(onClose).not.toHaveBeenCalled();
+});
+
+it("recognizes canonical Windows references and leaves slots intact when removing a reference", async () => {
+  api.loadConsistency.mockResolvedValue({
+    ...saved(),
+    baselines: [
+      { path: "C:/refs/external.png" },
+      { path: "C:/refs/side.png" },
+      { path: "\\\\?\\C:\\dataset\\base3.png" },
+    ],
+  });
+  const user = userEvent.setup();
+  mount();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Choose reference 1 from dataset" })).toBeEnabled()
+  );
+  await user.click(screen.getByRole("button", { name: "Choose reference 1 from dataset" }));
+  expect(screen.getByRole("button", { name: "Use base3.png as reference" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Close" }));
+  await user.click(screen.getByRole("button", { name: "Remove baseline 1" }));
+  expect(screen.getByRole("button", { name: "Preview baseline 3" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Preview baseline 1" })).not.toBeInTheDocument();
 });

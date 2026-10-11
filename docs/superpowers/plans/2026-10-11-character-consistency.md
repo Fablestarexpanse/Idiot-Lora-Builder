@@ -39,3 +39,8 @@ Verification: all 189 frontend tests passed, production build and focused ESLint
 User requested the comparison tool beside Batch Rename and Batch Resize. Rename its toolbar entry to Compare, retaining its position immediately after Batch Resize and adding a descriptive tooltip. Allow the toolbar to grow when buttons wrap so lower rows remain visible in narrower windows. Verify in the desktop app and rebuild the launched version.
 
 Verification: production frontend build and desktop build passed. Launched the bundled app at tauri.localhost and verified the visible toolbar order is Batch Rename, Batch Resize, Compare. Saved compare-toolbar.png as live evidence. Updated app remains open for the user.
+
+## Per-box dataset reference picker (2026-10-11)
+User requested clicking each reference box to choose from the already-loaded archive while retaining external files as an option. Implement a searchable, paginated thumbnail picker per slot, filled-slot replacement, duplicate prevention, separate preview buttons, and explicit close behavior. Preserve slot positions when filling or clearing them; changed references invalidate old scores.
+
+Verification: 191 frontend tests passed, production build, focused ESLint and bundled desktop build passed. Live native app on a disposable dataset verified per-slot replacement, search, canonical duplicate protection and returning via explicit close. Screenshot: dataset-reference-picker.png. No scans or file moves performed in the live check.

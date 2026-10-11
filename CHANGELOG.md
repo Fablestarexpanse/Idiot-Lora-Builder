@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Click each comparison reference box to choose or replace it from a searchable loaded-dataset thumbnail picker; external file picking remains available.
+
 - Larger transparent unicorn-only desktop icon for clearer taskbar identification.
 
 - Red/amber/green Bad/Middle/Good consistency cards, adjustable band boundaries, and group marking with separate selection indicators.

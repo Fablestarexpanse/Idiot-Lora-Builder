@@ -44,6 +44,11 @@ const bandStyle = {
   },
 };
 const fileName = (path: string) => path.replace(/\\/g, "/").split("/").pop() || path;
+const baselineKey = (path: string) =>
+  path
+    .replace(/^\\\\\?\\/, "")
+    .replace(/\\/g, "/")
+    .toLowerCase();
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 function Thumbnail({ path, size = 128 }: { path: string; size?: number }) {
   const query = useQuery({
@@ -73,7 +78,7 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
   const selectedIds = useSelectionStore((s) => s.selectedIds);
   const { data: images = [] } = useProjectImages();
   const queryClient = useQueryClient();
-  const [baselines, setBaselines] = useState<string[]>([]);
+  const [baselines, setBaselines] = useState<string[]>(["", "", ""]);
   const [scan, setScan] = useState<ConsistencyScan | null>(null);
   const [marked, setMarked] = useState<Set<string>>(new Set());
   const [cutoff, setCutoff] = useState(0.25);
@@ -86,6 +91,19 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
   const [confirmMove, setConfirmMove] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [referenceSlot, setReferenceSlot] = useState<number | null>(null);
+  const [referenceSearch, setReferenceSearch] = useState("");
+  const [referencePage, setReferencePage] = useState(0);
+  const baselineCount = baselines.filter(Boolean).length;
+  const referenceImages = useMemo(
+    () =>
+      images.filter((image) =>
+        image.relative_path.toLowerCase().includes(referenceSearch.toLowerCase())
+      ),
+    [images, referenceSearch]
+  );
+  const referencePages = Math.max(1, Math.ceil(referenceImages.length / PAGE_SIZE));
+  const currentReferencePage = Math.min(referencePage, referencePages - 1);
   useEffect(() => {
     if (!isOpen || !rootPath) return;
     let active = true;
@@ -93,14 +111,15 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
     setError("");
     setMessage("");
     setScan(null);
-    setBaselines([]);
+    setBaselines(["", "", ""]);
+    setReferenceSlot(null);
     setMarked(new Set());
     setCanUndo(false);
     loadConsistency(rootPath)
       .then((result) => {
         if (!active) return;
         setScan(result);
-        setBaselines(result.baselines.map((b) => b.path));
+        setBaselines([0, 1, 2].map((i) => result.baselines[i]?.path ?? ""));
         setCanUndo(result.can_undo);
         setCutoff(result.suggested_cutoff ?? 0.25);
         setGoodFrom(Math.max(0.6, result.suggested_cutoff ?? 0.25));
@@ -125,19 +144,46 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
   );
   const pathFor = (key: string) => imagePaths.get(key) ?? `${rootPath}/${key}`;
   function changeBaselines(next: string[]) {
-    setBaselines(next);
+    setBaselines([0, 1, 2].map((i) => next[i] ?? ""));
     setScan(null);
     setMarked(new Set());
     setMessage("");
     setError("");
   }
   function addBaselines(paths: string[]) {
-    const next = [...new Set([...baselines, ...paths])];
-    if (next.length > 3) {
-      setError("Choose up to three baseline images. Remove a reference to replace it.");
-      return;
+    const next = [...baselines];
+    for (const path of paths) {
+      if (next.some((existing) => existing && baselineKey(existing) === baselineKey(path)))
+        continue;
+      const empty = next.findIndex((existing) => !existing);
+      if (empty === -1) {
+        setError("Choose up to three baseline images. Remove a reference to replace it.");
+        return;
+      }
+      next[empty] = path;
     }
     changeBaselines(next);
+  }
+  function openReference(slot: number) {
+    setReferenceSlot(slot);
+    setReferenceSearch("");
+    setReferencePage(0);
+  }
+  function chooseReference(path: string) {
+    if (referenceSlot === null) return;
+    if (
+      baselines.some(
+        (existing, index) =>
+          index !== referenceSlot && existing && baselineKey(existing) === baselineKey(path)
+      )
+    )
+      return;
+    if (baselineKey(baselines[referenceSlot]) !== baselineKey(path)) {
+      const next = [...baselines];
+      next[referenceSlot] = path;
+      changeBaselines(next);
+    }
+    setReferenceSlot(null);
   }
   async function pickFiles() {
     try {
@@ -159,7 +205,7 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
       );
       const result = await scanConsistency(
         rootPath,
-        baselines,
+        baselines.filter(Boolean),
         images.map((i) => i.relative_path)
       );
       setScan(result);
@@ -231,7 +277,7 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
   return (
     <>
       <Modal
-        isOpen={isOpen && !preview && !confirmMove}
+        isOpen={isOpen && !preview && !confirmMove && referenceSlot === null}
         onClose={onClose}
         title="Consistency Check"
         icon={<ScanFace className="h-5 w-5" />}
@@ -266,7 +312,8 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
         <div className="shrink-0 space-y-3 border-b border-border p-4">
           <p className="text-sm text-gray-400">
             Choose three references that best represent your character, preferably with different
-            angles. Compare the finished dataset before exporting.
+            angles. Click a reference box to choose from the loaded dataset, or choose external
+            files.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             {[0, 1, 2].map((index) => (
@@ -275,27 +322,44 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
                 className="relative flex h-24 w-24 items-center justify-center rounded border border-border bg-surface"
                 title={baselines[index]}
               >
-                {baselines[index] ? (
+                <button
+                  className="flex h-full w-full flex-col items-center justify-center gap-1 rounded p-1 text-xs text-gray-400 hover:bg-white/10 disabled:opacity-40"
+                  aria-label={`Choose reference ${index + 1} from dataset`}
+                  title="Choose or replace from loaded dataset"
+                  disabled={!!busy || !images.length}
+                  onClick={() => openReference(index)}
+                >
+                  {baselines[index] ? (
+                    <Thumbnail path={baselines[index]} />
+                  ) : (
+                    <>
+                      <ScanFace className="h-5 w-5" />
+                      <span>Reference {index + 1}</span>
+                      <span className="text-[10px]">Choose from dataset</span>
+                    </>
+                  )}
+                </button>
+                {baselines[index] && (
                   <>
-                    <button
-                      className="h-full w-full p-1"
-                      aria-label={`Preview baseline ${index + 1}`}
-                      disabled={!!busy}
-                      onClick={() => setPreview(baselines[index])}
-                    >
-                      <Thumbnail path={baselines[index]} />
-                    </button>
                     <button
                       className="absolute right-1 top-1 rounded bg-black/80 p-0.5 text-gray-200"
                       disabled={!!busy}
                       aria-label={`Remove baseline ${index + 1}`}
-                      onClick={() => changeBaselines(baselines.filter((_, i) => i !== index))}
+                      onClick={() =>
+                        changeBaselines(baselines.map((path, i) => (i === index ? "" : path)))
+                      }
                     >
                       <X className="h-3 w-3" />
                     </button>
+                    <button
+                      className="absolute bottom-1 right-1 rounded bg-black/80 p-0.5 text-gray-200"
+                      disabled={!!busy}
+                      aria-label={`Preview baseline ${index + 1}`}
+                      onClick={() => setPreview(baselines[index])}
+                    >
+                      <ZoomIn className="h-3 w-3" />
+                    </button>
                   </>
-                ) : (
-                  <span className="text-xs text-gray-500">Reference {index + 1}</span>
                 )}
               </div>
             ))}
@@ -303,14 +367,14 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
               <div className="flex flex-wrap gap-2">
                 <button
                   className={button}
-                  disabled={!!busy || baselines.length === 3}
+                  disabled={!!busy || baselineCount === 3}
                   onClick={() => void pickFiles()}
                 >
                   Choose files...
                 </button>
                 <button
                   className={button}
-                  disabled={!!busy || !selectedIds.size || baselines.length === 3}
+                  disabled={!!busy || !selectedIds.size || baselineCount === 3}
                   onClick={() =>
                     addBaselines(images.filter((i) => selectedIds.has(i.id)).map((i) => i.path))
                   }
@@ -320,7 +384,7 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
               </div>
               <button
                 className="flex items-center gap-2 rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-40"
-                disabled={!!busy || baselines.length !== 3 || !images.length}
+                disabled={!!busy || baselineCount !== 3 || !images.length}
                 onClick={() => void runScan()}
               >
                 <ScanFace className="h-4 w-4" />
@@ -455,7 +519,7 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {!rows.length ? (
             <div className="py-10 text-center text-sm text-gray-500">
-              {baselines.length === 3
+              {baselineCount === 3
                 ? "Ready to scan your dataset."
                 : "Add three baseline images to get started."}
             </div>
@@ -534,6 +598,84 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
               onClick={() => setPage(currentPage + 1)}
             >
               Next
+            </button>
+          </div>
+        )}
+      </Modal>
+      <Modal
+        isOpen={isOpen && referenceSlot !== null}
+        onClose={() => setReferenceSlot(null)}
+        title={`Choose reference ${(referenceSlot ?? 0) + 1} from dataset`}
+        maxWidthClassName="max-w-4xl flex max-h-[85vh] flex-col"
+      >
+        <div className="shrink-0 space-y-2 border-b border-border p-4">
+          <p className="text-sm text-gray-400">
+            Click an image to use it for this reference. Images used in other reference boxes are
+            unavailable.
+          </p>
+          <input
+            aria-label="Search dataset references"
+            placeholder="Search by filename or folder..."
+            value={referenceSearch}
+            onChange={(event) => {
+              setReferenceSearch(event.target.value);
+              setReferencePage(0);
+            }}
+            className="w-full rounded border border-border bg-surface px-3 py-2 text-sm text-gray-200"
+          />
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {!referenceImages.length ? (
+            <p className="py-8 text-center text-sm text-gray-500">
+              No matching images in the loaded dataset.
+            </p>
+          ) : (
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+              {referenceImages
+                .slice(currentReferencePage * PAGE_SIZE, (currentReferencePage + 1) * PAGE_SIZE)
+                .map((image) => {
+                  const used = baselines.some(
+                    (path, index) =>
+                      index !== referenceSlot &&
+                      path &&
+                      baselineKey(path) === baselineKey(image.path)
+                  );
+                  return (
+                    <button
+                      key={image.id}
+                      aria-label={`Use ${image.relative_path} as reference`}
+                      disabled={used}
+                      onClick={() => chooseReference(image.path)}
+                      title={image.relative_path}
+                      className="overflow-hidden rounded border border-border bg-surface p-2 text-left hover:border-blue-400 disabled:opacity-40"
+                    >
+                      <div className="flex h-28 items-center justify-center">
+                        <Thumbnail path={image.path} size={256} />
+                      </div>
+                      <p className="mt-2 truncate text-xs text-gray-300">{image.relative_path}</p>
+                      {used && <p className="text-[10px] text-gray-400">Already a reference</p>}
+                    </button>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+        {referencePages > 1 && (
+          <div className="flex shrink-0 items-center justify-center gap-3 border-t border-border py-3 text-xs text-gray-400">
+            <button
+              className={button}
+              disabled={currentReferencePage === 0}
+              onClick={() => setReferencePage(currentReferencePage - 1)}
+            >
+              Previous references
+            </button>
+            Page {currentReferencePage + 1} of {referencePages}
+            <button
+              className={button}
+              disabled={currentReferencePage + 1 >= referencePages}
+              onClick={() => setReferencePage(currentReferencePage + 1)}
+            >
+              Next references
             </button>
           </div>
         )}
