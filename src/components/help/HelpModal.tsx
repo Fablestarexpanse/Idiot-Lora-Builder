@@ -13,7 +13,7 @@ const shortcuts = [
   { key: "Ctrl+Click", action: "Multi-select images" },
   { key: "Shift+Click", action: "Select a range of images" },
   { key: "Ctrl+A", action: "Select all visible (filtered) images" },
-  { key: "Escape", action: "Clear selection / close dialog" },
+  { key: "Escape", action: "Clear selection" },
   { key: "Enter / Double-click", action: "Open image in preview" },
   { key: "Space", action: "Select the focused tile" },
   { key: "T", action: "Focus tag input" },

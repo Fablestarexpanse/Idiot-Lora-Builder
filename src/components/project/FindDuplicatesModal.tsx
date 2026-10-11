@@ -222,7 +222,7 @@ export function FindDuplicatesModal({ isOpen, onClose }: FindDuplicatesModalProp
   }
 
   function handleClose() {
-    // While the confirm dialog is open, Escape/backdrop should only dismiss it.
+    // Keep the parent dialog protected while the confirmation is open.
     if (pendingDelete !== null) {
       if (!deleteMutation.isPending) setPendingDelete(null);
       return;

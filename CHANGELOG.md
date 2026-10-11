@@ -36,6 +36,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Dialogs now stay open on outside clicks and Escape. Use their explicit close or action buttons to avoid accidentally dismissing work.
+
 - AI now appears before Tags in the right panel and opens by default at startup, as requested.
 
 ## [0.7.0] - 2026-08-17
@@ -202,6 +204,7 @@ dramatically faster and the UI stays responsive throughout.
 
 
 ### Changed
+
 
 - UI vocabulary standardized on "tags" (formerly a mix of "prompts"/"tags").
 - Shared HTTP client for AI providers (connection reuse).

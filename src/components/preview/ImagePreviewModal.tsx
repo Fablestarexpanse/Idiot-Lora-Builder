@@ -122,7 +122,8 @@ export function ImagePreviewModal({ isOpen, onClose }: ImagePreviewModalProps) {
     function handleKey(e: KeyboardEvent) {
       switch (e.key) {
         case "Escape":
-          onClose();
+          e.preventDefault();
+          e.stopPropagation();
           break;
         case "ArrowLeft":
           e.preventDefault();

@@ -17,13 +17,13 @@ interface ModalProps {
   maxWidthClassName?: string;
   /** Close when the backdrop (outside the panel) is clicked. */
   closeOnBackdrop?: boolean;
-  /** Disables the X button, Escape, and backdrop close (e.g. while a mutation is pending). */
+  /** Disables the X button and backdrop close (e.g. while a mutation is pending). */
   closeDisabled?: boolean;
 }
 
 /**
  * Shared modal shell: backdrop, elevated panel, header with title + X close
- * button, focus trap, Escape-to-close, and dialog ARIA wiring. Clicks inside
+ * button, focus trap, and dialog ARIA wiring. Dismissal is explicit by default. Clicks inside
  * the overlay never propagate to elements underneath (modals may be rendered
  * inside clickable containers such as grid cells).
  */
@@ -35,7 +35,7 @@ export function Modal({
   children,
   footer,
   maxWidthClassName = "max-w-sm",
-  closeOnBackdrop = true,
+  closeOnBackdrop = false,
   closeDisabled = false,
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -45,11 +45,14 @@ export function Modal({
   useEffect(() => {
     if (!isOpen) return;
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && !closeDisabled) onClose();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+      }
     }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, closeDisabled, onClose]);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

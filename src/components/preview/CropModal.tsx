@@ -827,14 +827,13 @@ export function CropModal() {
   useEffect(() => {
     if (!isOpen) return;
     function onKeyDown(e: KeyboardEvent) {
-      const { handlePrev, handleNext, applyRatioChip, currentIndex, images, cropMutation, closeCrop } =
+      const { handlePrev, handleNext, applyRatioChip, currentIndex, images, cropMutation } =
         keydownRef.current;
       if (e.key === "Escape") {
-        // Close only the crop modal; stop propagation (listener is in the
-        // capture phase) so the preview modal underneath stays open.
+        // Keep Escape from reaching the preview or grid underneath.
         e.preventDefault();
         e.stopPropagation();
-        closeCrop();
+
         return;
       }
       const target = e.target as HTMLElement;

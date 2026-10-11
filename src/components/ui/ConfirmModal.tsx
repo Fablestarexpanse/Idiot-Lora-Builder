@@ -24,7 +24,7 @@ interface ConfirmModalProps {
   confirmWord?: string;
   /** Render Cancel/confirm in a bordered footer bar instead of inline in the body. */
   buttonsInFooter?: boolean;
-  /** Disables Cancel, the X button, Escape, and backdrop close. */
+  /** Disables Cancel, the X button, and backdrop close. */
   closeDisabled?: boolean;
   maxWidthClassName?: string;
 }
