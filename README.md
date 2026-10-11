@@ -8,7 +8,7 @@
 
 A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, etc.). Tag and caption images, rate and curate them, crop for training, and caption with local AI — a built-in captioner (downloads a Qwen3-VL vision model on demand and runs fully offline, no extra software needed) or your own LM Studio / Ollama — then export to folder, ZIP, or straight into a trainer.
 
-![Version](https://img.shields.io/badge/version-0.6.0-blue.svg)
+![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 ![Idiot LoRa Builder — main window](assets/screenshot.png)
@@ -23,7 +23,7 @@ A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, et
 - **Batch rename** — Rename image + caption pairs with a pattern and sequential numbering
 - **Batch resize** — Resize / center-crop / fit to a target size (512/768/1024 presets) for all, selected, or Good-rated images; outputs to a folder with captions copied
 - **Export** — Folder or ZIP; export all, selected, or by rating (good/bad/needs_edit subfolders); trigger word, sequential naming
-- **Character consistency** - Choose three references from your loaded dataset, external files, or both. Scan locally with InsightFace buffalo_l / ArcFace, review Good / Bad / Needs Edit suggestions, adjust score cutoffs, and override individual ratings. Apply all or selected ratings to the main dataset without moving images. Baselines and ambiguous/unscored images keep their existing ratings unless manually reviewed (baselines remain protected). Saved scores invalidate when images or references change. Earlier exclusions can still be restored. Human faces are the supported starting point; nonhuman and illustrated faces are experimental.
+- **Character consistency** - Choose three references from your loaded dataset, external files, or both. Scan locally with InsightFace buffalo_l / ArcFace, review Good / Bad / Needs Edit suggestions, adjust score cutoffs, and override individual ratings. Apply all or selected ratings to the main dataset without moving images. Baselines keep their existing ratings. Ambiguous or unscored images are only rated if you choose a rating manually. Saved scores invalidate when images or references change. Earlier exclusions can still be restored. Human faces are the supported starting point; nonhuman and illustrated faces are experimental.
 
 - **Send to Fizgig** — Handoff to a local [Fizgig](https://github.com/shootthesound/Fizgig) install (LoRA training workbench): a dialog lets you name the dataset and choose what to include (by rating, all, or current selection), then exports images + captions into Fizgig's own `dataset/<name>` folder (cleared on each send so demoted images never linger), launches Fizgig, and copies the path to your clipboard for its Start tab. Set the Fizgig folder under Settings → Integrations.
 - **Tools** — Find duplicates, either **exact** (SHA-256, byte-identical) or **similar** (perceptual hash, so re-encoded/resized/lightly-cropped copies are caught too) with per-file delete and keep-largest actions, dataset stats, clear all tags (type "clear" to confirm), clear all ratings
@@ -94,6 +94,7 @@ Everything stays with your images — no database, no cloud:
 
 - **Captions** — one sidecar `.txt` per image, same base name, comma-separated tags (Kohya/OneTrainer compatible)
 - **Ratings** — `.lora-studio/ratings.json` inside the project folder (map of relative image path → rating)
+- **Comparison results** — `.lora-studio/look-consistency.json`; saved scores are checked against the current images and references
 - **Crop status** — `.lora-studio/crop_status.json` inside the project folder
 - **Thumbnails** — JPEG cache in your OS temp dir (`lora-dataset-studio-thumbnails`); safe to delete, regenerated on demand
 
@@ -130,8 +131,44 @@ Everything stays with your images — no database, no cloud:
 2. **Edit tags** — click caption under an image or use the right panel.
 3. **Rate** — Good / Bad / Needs Edit (or 1 / 2 / 3; with a multi-selection active, rates all selected images).
 4. **AI** — Choose Built-in (local), LM Studio, or Ollama in the AI panel, then Generate Caption (single) or Batch. The built-in captioner offers a one-time model download (Qwen3-VL 8B or 4B) and runs fully offline.
-5. **Export** — Export → choose what to export (all, selected, by rating, etc.) → pick destination.
-6. **Train** — Send to Fizgig: name the dataset, pick what to include (by rating / all / selection), and it exports into Fizgig's `dataset/<name>` folder and launches Fizgig with the path on your clipboard (set its folder in Settings → Integrations first).
+5. **Compare** — Check character consistency against three references, review Good / Bad / Needs Edit suggestions, and apply ratings to the main grid. See the illustrated guide below.
+6. **Export** — Export → choose what to export (all, selected, by rating, etc.) → pick destination.
+7. **Train** — Send to Fizgig: name the dataset, pick what to include (by rating / all / selection), and it exports into Fizgig's `dataset/<name>` folder and launches Fizgig with the path on your clipboard (set its folder in Settings → Integrations first).
+
+### Compare: rate character consistency
+
+Open your image folder, then click **Compare** in the top bar beside **Batch Resize**.
+
+**1. Choose three references.** Click each reference box to browse thumbnails from the loaded dataset. Search by filename or folder, then click an image to fill that box. Click a filled box to replace it; the small magnifying glass previews it. Images already used in another box are disabled.
+
+You can also use **Choose files...** for external references, or **Use selected images** for images selected on the main grid. Mix these options to fill all three boxes. For your actual dataset, choose clear images that represent the character across different angles.
+
+![Choose a reference directly from the loaded dataset, with search and duplicate protection](assets/docs/compare-references.png)
+
+**2. Scan and review.** Click **Scan**. The first scan downloads the face models if needed; comparison runs locally. Results appear from lowest to highest similarity.
+
+| Color | Dataset rating | Suggested use |
+|-------|----------------|---------------|
+| Green | Good | Stronger match to your references |
+| Red | Bad | Lower match; inspect for character drift |
+| Amber | Needs Edit | Between the cutoffs; review before training |
+| Gray | Baseline / Review | Protected reference, or a result needing manual review |
+
+Adjust **Bad below** and **Good from** to set the boundaries. **Suggest outliers** restores the suggested lower cutoff and selects the lowest matches. Use the dropdown on an image to override its suggestion with **Good**, **Bad**, or **Needs Edit**. The blue outline means selected; the red, amber or green border shows the proposed rating.
+
+![Review Good, Bad and Needs Edit suggestions, override individual ratings, and choose what to apply](assets/docs/compare-review.png)
+
+**3. Apply ratings to your dataset.** Click **Apply all ratings** to save all reviewed ratings. To apply only part of the results, use the **Select all good / bad / needs edit** buttons or individual **Select** buttons, then click **Apply selected ratings**. Group selection replaces the previous selection.
+
+Applying replaces existing ratings for those images. Baseline ratings stay unchanged, and ambiguous or unscored images keep their ratings unless you manually choose one. Scanning, changing cutoffs and selecting images do not save ratings by themselves.
+
+Close Compare with **X**. The main grid immediately shows the same **Good / Bad / Needs Edit** ratings, ready for filtering, captioning or exporting. Images and captions stay in their original locations, and ratings are saved in `.lora-studio/ratings.json`.
+
+![Applied comparison ratings appear immediately on the main grid as green Good, amber Needs Edit and red Bad cards](assets/docs/compare-ratings.png)
+
+Scores measure face similarity, not certainty or overall image quality. Human faces work best; illustrated and nonhuman characters are experimental. No-face and multiple-face images require manual review.
+
+*Screenshot demo: brightness variants of a single public-domain Grace Hopper portrait illustrate the controls; they are not an example of a varied training set or a model-accuracy benchmark. Photo: James S. Davis / U.S. Navy, [source and public-domain information](https://commons.wikimedia.org/wiki/File:Grace_Hopper.jpg).*
 
 ### Shortcuts
 
@@ -148,7 +185,7 @@ Everything stays with your images — no database, no cloud:
 | Rate                | 1 / 2 / 3 (applies to the whole selection when multi-selected) |
 | Focus tag input     | T               |
 | Undo / redo (tags)  | Ctrl+Z / Ctrl+Y |
-| Close dialog        | Escape          |
+| Close dialog        | Click the X button |
 | Zoom (preview)      | + / −           |
 | Prev/next (preview) | ← / →           |
 | Nudge crop box      | Arrow keys (crop tool) |
@@ -189,4 +226,4 @@ MIT — see [LICENSE](LICENSE).
 
 The baseline-comparison and outlier-review workflow is inspired by [Fizgig](https://github.com/shootthesound/Fizgig). The interface and implementation are native to Idiot LoRa Builder. Inference uses [InsightFace buffalo_l](https://github.com/deepinsight/insightface), running SCRFD detection and ArcFace recognition on the CPU through ONNX Runtime. InsightFace code is MIT licensed; its pretrained models are offered under the upstream noncommercial research terms. Models are downloaded on first scan, or reused from the standard `.insightface/models/buffalo_l` cache if already installed. The models are not bundled with the application.
 
-Scores are the average cosine similarity against all three references, not identity probabilities. Auto-Suggest matches Fizgig's index-based statistics: `max(scores[n/2] - 1.5 * (scores[3*n/4] - scores[n/4]), 0.25)` after sorting, with integer indices and at least four scored images. Baselines, images without a scored face, and multiple-face images are never automatically marked. Multiple-face images use the largest face for the displayed score and require manual review. A scan alone never moves files.
+Scores are the average cosine similarity against all three references, not identity probabilities. Auto-Suggest matches Fizgig's index-based statistics: `max(scores[n/2] - 1.5 * (scores[3*n/4] - scores[n/4]), 0.25)` after sorting, with integer indices and at least four scored images. Baselines, images without a scored face, and multiple-face images are never automatically marked. Multiple-face images use the largest face for the displayed score and require manual review. A scan alone never changes dataset ratings. Apply ratings explicitly after reviewing; images and captions stay in place.
