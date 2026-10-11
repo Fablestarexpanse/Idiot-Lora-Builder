@@ -7,7 +7,12 @@ import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSelectionStore } from "@/stores/selectionStore";
 import { useProjectImages } from "@/hooks/useProject";
-import { lowestFirst, suggestedMarks } from "@/lib/consistency";
+import {
+  consistencyBand,
+  lowestFirst,
+  suggestedMarks,
+  type ConsistencyBand,
+} from "@/lib/consistency";
 import { withThumbnailInvokeLimit } from "@/lib/thumbnailInvokeLimit";
 import {
   loadConsistency,
@@ -24,6 +29,20 @@ import {
 const button =
   "rounded border border-border bg-surface px-3 py-1.5 text-xs font-medium text-gray-200 hover:bg-white/10 disabled:opacity-40";
 const PAGE_SIZE = 60;
+const bands: ConsistencyBand[] = ["bad", "middle", "good"];
+const bandStyle = {
+  bad: { label: "Bad", card: "border-red-500 bg-red-500/5", badge: "bg-red-600 text-white" },
+  middle: {
+    label: "Middle",
+    card: "border-amber-500 bg-amber-500/5",
+    badge: "bg-amber-600 text-white",
+  },
+  good: {
+    label: "Good",
+    card: "border-green-500 bg-green-500/5",
+    badge: "bg-green-600 text-white",
+  },
+};
 const fileName = (path: string) => path.replace(/\\/g, "/").split("/").pop() || path;
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 function Thumbnail({ path, size = 128 }: { path: string; size?: number }) {
@@ -58,6 +77,7 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
   const [scan, setScan] = useState<ConsistencyScan | null>(null);
   const [marked, setMarked] = useState<Set<string>>(new Set());
   const [cutoff, setCutoff] = useState(0.25);
+  const [goodFrom, setGoodFrom] = useState(0.6);
   const [busy, setBusy] = useState<"scan" | "move" | "undo" | "load" | null>(null);
   const [progress, setProgress] = useState({ current: 0, total: 0, phase: "" });
   const [error, setError] = useState("");
@@ -83,6 +103,7 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
         setBaselines(result.baselines.map((b) => b.path));
         setCanUndo(result.can_undo);
         setCutoff(result.suggested_cutoff ?? 0.25);
+        setGoodFrom(Math.max(0.6, result.suggested_cutoff ?? 0.25));
         setPage(0);
       })
       .catch((e) => {
@@ -145,6 +166,7 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
       setCanUndo(result.can_undo);
       setMarked(new Set());
       setCutoff(result.suggested_cutoff ?? 0.25);
+      setGoodFrom(Math.max(0.6, result.suggested_cutoff ?? 0.25));
       setPage(0);
       setMessage(
         "Scan complete. Review the lowest scores or use Suggest outliers. Nothing has been moved."
@@ -158,7 +180,17 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
   }
   function applyCutoff(value: number) {
     setCutoff(value);
+    setGoodFrom((previous) => Math.max(previous, value));
     setMarked(suggestedMarks(rows, value));
+  }
+  function markBand(band: ConsistencyBand) {
+    setMarked(
+      new Set(
+        rows
+          .filter((score) => consistencyBand(score, cutoff, goodFrom) === band)
+          .map((score) => score.relative_path)
+      )
+    );
   }
   function toggle(score: ConsistencyScore) {
     if (score.baseline) return;
@@ -358,7 +390,7 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
                 Suggest outliers
               </button>
               <label className="flex min-w-64 flex-1 items-center gap-3 text-xs text-gray-300">
-                Mark below {cutoff.toFixed(2)}
+                Bad below {cutoff.toFixed(2)}
                 <input
                   aria-label="Similarity cutoff"
                   className="flex-1 accent-blue-500"
@@ -371,6 +403,40 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
                   onChange={(e) => applyCutoff(Number(e.target.value))}
                 />
               </label>
+              <label className="flex min-w-64 flex-1 items-center gap-3 text-xs text-gray-300">
+                Good from {goodFrom.toFixed(2)}
+                <input
+                  aria-label="Good similarity cutoff"
+                  className="flex-1 accent-green-500"
+                  type="range"
+                  min={cutoff}
+                  max={1}
+                  step={0.01}
+                  value={goodFrom}
+                  disabled={!!busy}
+                  onChange={(e) => setGoodFrom(Number(e.target.value))}
+                />
+              </label>
+              <div className="flex w-full flex-wrap gap-2">
+                {bands.map((band) => {
+                  const count = rows.filter(
+                    (score) => consistencyBand(score, cutoff, goodFrom) === band
+                  ).length;
+                  return (
+                    <button
+                      key={band}
+                      className={`rounded px-3 py-1.5 text-xs font-medium disabled:opacity-40 ${bandStyle[band].badge}`}
+                      disabled={!!busy || !count}
+                      onClick={() => markBand(band)}
+                    >
+                      Mark all {bandStyle[band].label.toLowerCase()} ({count})
+                    </button>
+                  );
+                })}
+                <span className="self-center text-xs text-gray-400">
+                  Group buttons replace the current marks. Middle sits between the two cutoffs.
+                </span>
+              </div>
               <button
                 className={button}
                 disabled={!!busy || !marked.size}
@@ -395,46 +461,60 @@ export function ConsistencyModal({ isOpen, onClose }: { isOpen: boolean; onClose
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {rows.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map((score) => (
-                <article
-                  key={score.relative_path}
-                  className={`overflow-hidden rounded border ${marked.has(score.relative_path) ? "border-amber-500 bg-amber-950/20" : "border-border bg-surface"}`}
-                >
-                  <button
-                    className="group relative flex h-40 w-full items-center justify-center bg-black/30 p-2"
-                    onClick={() => setPreview(pathFor(score.relative_path))}
-                    aria-label={`Preview ${score.relative_path}`}
-                    disabled={!!busy}
+              {rows.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map((score) => {
+                const band = consistencyBand(score, cutoff, goodFrom);
+                return (
+                  <article
+                    key={score.relative_path}
+                    aria-label={`${score.relative_path}: ${band ? bandStyle[band].label : score.baseline ? "Baseline" : "Review"}${marked.has(score.relative_path) ? ", marked" : ""}`}
+                    className={`overflow-hidden rounded border-2 ${band ? bandStyle[band].card : "border-border bg-surface"} ${marked.has(score.relative_path) ? "ring-2 ring-blue-400 ring-offset-2 ring-offset-surface" : ""}`}
                   >
-                    <Thumbnail path={pathFor(score.relative_path)} size={256} />
-                    <ZoomIn className="absolute bottom-2 right-2 h-4 w-4 text-gray-400 group-hover:text-white" />
-                  </button>
-                  <div className="space-y-2 p-2">
-                    <p className="truncate text-xs text-gray-300" title={score.relative_path}>
-                      {score.relative_path}
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-lg font-medium tabular-nums text-gray-100">
-                        {score.similarity == null ? "--" : score.similarity.toFixed(2)}
-                      </span>
-                      <button
-                        className={`${button} ${marked.has(score.relative_path) ? "text-amber-300" : ""}`}
-                        disabled={score.baseline || !!busy}
-                        onClick={() => toggle(score)}
-                      >
-                        {score.baseline
-                          ? "Baseline"
-                          : marked.has(score.relative_path)
-                            ? "Keep"
-                            : "Mark"}
-                      </button>
+                    <button
+                      className="group relative flex h-40 w-full items-center justify-center bg-black/30 p-2"
+                      onClick={() => setPreview(pathFor(score.relative_path))}
+                      aria-label={`Preview ${score.relative_path}`}
+                      disabled={!!busy}
+                    >
+                      <Thumbnail path={pathFor(score.relative_path)} size={256} />
+                      <ZoomIn className="absolute bottom-2 right-2 h-4 w-4 text-gray-400 group-hover:text-white" />
+                    </button>
+                    <div className="space-y-2 p-2">
+                      <div className="flex items-center justify-between gap-2 text-[11px] font-medium">
+                        <span
+                          className={`rounded px-2 py-0.5 ${band ? bandStyle[band].badge : "bg-gray-700 text-gray-200"}`}
+                        >
+                          {band ? bandStyle[band].label : score.baseline ? "Baseline" : "Review"}
+                        </span>
+                        {marked.has(score.relative_path) && (
+                          <span className="text-blue-300">Marked</span>
+                        )}
+                      </div>
+                      <p className="truncate text-xs text-gray-300" title={score.relative_path}>
+                        {score.relative_path}
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-lg font-medium tabular-nums text-gray-100">
+                          {score.similarity == null ? "--" : score.similarity.toFixed(2)}
+                        </span>
+                        <button
+                          className={`${button} ${marked.has(score.relative_path) ? "text-amber-300" : ""}`}
+                          disabled={score.baseline || !!busy}
+                          onClick={() => toggle(score)}
+                        >
+                          {score.baseline
+                            ? "Baseline"
+                            : marked.has(score.relative_path)
+                              ? "Keep"
+                              : "Mark"}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-gray-500" title={score.error ?? ""}>
+                        {status(score)}
+                      </p>
                     </div>
-                    <p className="text-[11px] text-gray-500" title={score.error ?? ""}>
-                      {status(score)}
-                    </p>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           )}
         </div>

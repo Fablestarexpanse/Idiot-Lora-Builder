@@ -120,3 +120,42 @@ describe("Consistency Check", () => {
     expect(api.excludeConsistency).not.toHaveBeenCalled();
   });
 });
+
+it("colors score bands and replaces marks by group without moving files", async () => {
+  const result = saved();
+  result.scores.push(
+    { relative_path: "middle.png", similarity: 0.4, face_count: 1, baseline: false, error: null },
+    { relative_path: "good.png", similarity: 0.8, face_count: 1, baseline: false, error: null },
+    { relative_path: "multi.png", similarity: 0.1, face_count: 2, baseline: false, error: null }
+  );
+  api.loadConsistency.mockResolvedValue(result);
+  const user = userEvent.setup();
+  mount();
+  expect(await screen.findByRole("article", { name: "low.png: Bad" })).toHaveClass(
+    "border-red-500"
+  );
+  expect(screen.getByRole("article", { name: "middle.png: Middle" })).toHaveClass(
+    "border-amber-500"
+  );
+  expect(screen.getByRole("article", { name: "good.png: Good" })).toHaveClass("border-green-500");
+  expect(screen.getByRole("article", { name: "multi.png: Review" })).toHaveClass("border-border");
+  await user.click(screen.getByRole("button", { name: "Mark all bad (1)" }));
+  expect(screen.getByRole("article", { name: "low.png: Bad, marked" })).toHaveClass(
+    "ring-blue-400"
+  );
+  await user.click(screen.getByRole("button", { name: "Mark all middle (1)" }));
+  expect(screen.getByRole("article", { name: "low.png: Bad" })).not.toHaveClass("ring-blue-400");
+  expect(screen.getByRole("article", { name: "middle.png: Middle, marked" })).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("slider", { name: "Good similarity cutoff" }), {
+    target: { value: "0.35" },
+  });
+  expect(screen.getByRole("article", { name: "middle.png: Good, marked" })).toHaveClass(
+    "border-green-500"
+  );
+  await user.click(screen.getByRole("button", { name: "Mark all good (2)" }));
+  expect(screen.getByText(/2 marked/)).toBeInTheDocument();
+  expect(screen.getByRole("article", { name: "base1.png: Baseline" })).not.toHaveClass(
+    "ring-blue-400"
+  );
+  expect(api.excludeConsistency).not.toHaveBeenCalled();
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lowestFirst, suggestedMarks } from "./consistency";
+import { consistencyBand, lowestFirst, suggestedMarks } from "./consistency";
 import type { ConsistencyScore } from "./tauri";
 const row = (
   relative_path: string,
@@ -35,4 +35,18 @@ describe("consistency review", () => {
     expect(lowestFirst(input).map((r) => r.relative_path)).toEqual(["low", "high", "none"]);
     expect(input[0].relative_path).toBe("none");
   });
+});
+
+it("assigns inclusive band boundaries and leaves protected or ambiguous images neutral", () => {
+  expect(consistencyBand(row("bad", 0.24), 0.25, 0.6)).toBe("bad");
+  expect(consistencyBand(row("middle", 0.25), 0.25, 0.6)).toBe("middle");
+  expect(consistencyBand(row("good", 0.6), 0.25, 0.6)).toBe("good");
+  for (const score of [
+    row("base", 0.1, { baseline: true }),
+    row("multi", 0.1, { face_count: 2 }),
+    row("error", 0.1, { error: "failed" }),
+    row("missing", null),
+  ]) {
+    expect(consistencyBand(score, 0.25, 0.6)).toBeNull();
+  }
 });

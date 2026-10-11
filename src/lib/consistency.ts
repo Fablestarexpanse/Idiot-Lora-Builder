@@ -22,3 +22,16 @@ export function lowestFirst(scores: ConsistencyScore[]): ConsistencyScore[] {
       a.relative_path.localeCompare(b.relative_path)
   );
 }
+
+export type ConsistencyBand = "bad" | "middle" | "good";
+
+export function consistencyBand(
+  score: ConsistencyScore,
+  badBelow: number,
+  goodFrom: number
+): ConsistencyBand | null {
+  if (score.baseline || score.error || score.face_count !== 1 || score.similarity === null)
+    return null;
+  if (score.similarity < badBelow) return "bad";
+  return score.similarity < goodFrom ? "middle" : "good";
+}

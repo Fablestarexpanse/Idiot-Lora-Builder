@@ -1,4 +1,4 @@
-NEXT: Implementation, review, and live desktop verification complete; default-feature cargo check passed. Commit the feature locally and report the tested result. No push requested for this step.
+NEXT: Color bands and group marking verified in the live desktop app; commit locally and report. No push requested for this step.
 
 # Character consistency implementation plan
 
@@ -29,3 +29,8 @@ Review focus: baseline protection; failures vs no-face; moved files reappearing 
 - Independent review found an interrupted hard-link move recovery gap, fixed with journal SHA256 checks and a crash-window regression test. Final focused review reported no remaining material findings. Index-based median and quartiles intentionally match Fizgig exactly.
 - Found the user's running checkout at F:/idiot lora builder/Idiot-Lora-Builder, with an existing uncommitted Cargo.toml change. Left it untouched. Implementation remains in F:/Cursor Projects/Lora Dataset Studio. Used an isolated verification server on port 1421 and a separate WebView profile; the user's server on port 1420 was not modified.
 - Model weights are reused read-only from the standard .insightface cache when present. The first-use download path uses the official buffalo_l release and extracts only det_10g.onnx and w600k_r50.onnx; that network path was not needed on this machine.
+
+## Visual consistency groups (2026-10-11)
+User requested easy visual identification and selection like the existing Good/Bad ratings. Use matching red/amber/green borders and explicit Bad/Middle/Good badges, separate blue mark indicators, and group mark buttons. Bad follows the existing outlier cutoff; Good initially starts at 0.60 and is adjustable; Middle lies between them. These are review bands, not dataset ratings or model confidence. Baselines and unscored/ambiguous faces remain neutral and excluded from group marking. Group buttons replace current marks; moving still requires confirmation.
+
+Verification: all 189 frontend tests passed, production build and focused ESLint passed. Live native desktop showed red Bad, amber Middle and green Good cards; Bad/Good group marking replaced the prior selection, preserving baseline protection. No files moved during this check. Screenshot: consistency-colors.png in the current chat visualization directory.
