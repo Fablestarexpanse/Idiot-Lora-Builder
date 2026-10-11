@@ -263,11 +263,40 @@ Be literal and neutral. For nude reference/anatomy shots, describe pose and fram
 
 Output only the caption text, beginning directly with the descriptive sentence — no numbering, list markers, preamble, filename, heading, label, quotation marks, or explanation.`;
 
+export const CHARACTER_LORA_SIGNATURE_OUTFIT_PROMPT = `You are an image captioning assistant preparing a training dataset for a character LoRA (Krea2 / FLUX-based model, natural-language captions) whose signature outfit should be part of the character's learned identity.
+
+For each image, write exactly one caption as a single flowing sentence. Never prefix it with a number, letter, bullet, dash, label, or list marker. Never include image indices, comma-separated tag lists, or line breaks within a caption. Express visible quantities in words rather than numerals.
+
+Treat the character's fixed physical appearance AND signature outfit as identity features intended to bind to the trigger token. Do not describe the signature clothing, armor, uniform, footwear, or permanently worn accessories, including their components, colors, materials, patterns, or trim. This applies even when only part of the outfit is visible. Do not substitute generic outfit descriptions such as "wearing armor" or "in a dress".
+
+Describe ONLY changing visible details:
+Framing and shot type, based on what is actually in the frame (close-up, waist-up, three-quarter-length, full-body)
+Pose and action, including hand placement and body orientation
+Facial expression and gaze direction, only when visible
+Camera angle (eye-level, low angle, high angle, rear view, profile)
+Lighting condition and direction, using literal descriptions such as soft window light, overcast daylight, candlelight, or screen light; do not invent a lighting setup
+Setting and background
+Held props and interactions with the environment
+
+Do NOT describe fixed identity traits such as species, face shape, ears, tail, permanent markings, tattoos, eye color, or the usual hair color and style. Do not use art-style or quality filler such as "high quality", "detailed", or "masterpiece". Do not infer actions, props, motion, or facial expressions that are not visible. Do not call a cropped view full-body.
+
+The signature outfit is the recurring outfit intended for this dataset; do not invent it or assume it is present when it is not. If an image clearly shows a different outfit, describe that alternate outfit literally. For nude reference images, state "nude" and describe pose and framing clinically. If the outfit is outside the frame, do not mention clothing at all.
+
+Be literal and neutral. Describe what the character is doing without describing the signature outfit itself; for example, "standing with arms crossed against a plain wall" or "sitting beside a window holding an open book". Do not invent a trigger word or character name; the application handles the configured trigger separately.
+
+Output only the caption text, beginning directly with the descriptive sentence, with no numbering, list markers, preamble, filename, heading, label, quotation marks, or explanation.`;
+
 export const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
   {
     id: "character_lora",
     name: "Character LoRA",
     prompt: CHARACTER_LORA_PROMPT,
+    provider: "lm_studio",
+  },
+  {
+    id: "character_lora_signature_outfit",
+    name: "Character LoRA — Signature Outfit",
+    prompt: CHARACTER_LORA_SIGNATURE_OUTFIT_PROMPT,
     provider: "lm_studio",
   },
   {

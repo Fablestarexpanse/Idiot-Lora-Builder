@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { useAiStore } from "./aiStore";
-import { CHARACTER_LORA_PROMPT } from "@/types";
+import { CHARACTER_LORA_PROMPT, CHARACTER_LORA_SIGNATURE_OUTFIT_PROMPT } from "@/types";
 
 const merge = useAiStore.persist.getOptions().merge!;
 
@@ -22,6 +22,22 @@ describe("Character LoRA prompt upgrade", () => {
     expect(state.customPrompt).toBe(template.prompt);
     expect(state.selectedTemplateId).toBe(template.id);
     expect(state.promptTemplates).toContainEqual(template);
+    expect(state.promptTemplates.find((t) => t.id === "character_lora")?.prompt).toBe(CHARACTER_LORA_PROMPT);
+  });
+});
+
+
+describe("Signature Outfit preset availability", () => {
+  it("adds the secondary preset to existing settings without changing the active custom prompt", () => {
+    const state = merge({
+      selectedTemplateId: "descriptive",
+      customPrompt: "My current caption instructions",
+      promptTemplates: [],
+    }, useAiStore.getState());
+    expect(state.selectedTemplateId).toBe("descriptive");
+    expect(state.customPrompt).toBe("My current caption instructions");
+    expect(state.promptTemplates.find((t) => t.id === "character_lora_signature_outfit")?.prompt)
+      .toBe(CHARACTER_LORA_SIGNATURE_OUTFIT_PROMPT);
     expect(state.promptTemplates.find((t) => t.id === "character_lora")?.prompt).toBe(CHARACTER_LORA_PROMPT);
   });
 });
