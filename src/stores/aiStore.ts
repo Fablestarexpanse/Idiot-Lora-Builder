@@ -9,7 +9,7 @@ import type {
   OllamaSettings,
   PromptTemplate,
 } from "@/types";
-import { DEFAULT_PROMPT_TEMPLATES, EXTRA_OPTION_EXCLUSIVE_PAIRS } from "@/types";
+import { CHARACTER_LORA_PROMPT, DEFAULT_PROMPT_TEMPLATES, EXTRA_OPTION_EXCLUSIVE_PAIRS } from "@/types";
 
 interface AiState {
   // Provider selection
@@ -91,7 +91,7 @@ export const useAiStore = create<AiState>()(
       provider: "lm_studio",
       setProvider: (provider) => set({ provider }),
 
-      // Custom prompt (matches first template)
+      // Custom prompt (matches the Descriptive template)
       customPrompt: "Write a long detailed description for this image.",
       setCustomPrompt: (customPrompt) => set({ customPrompt }),
 
@@ -238,8 +238,17 @@ export const useAiStore = create<AiState>()(
         // Always refresh built-in templates from the current defaults so new or
         // updated defaults reach existing users; keep user-created templates.
         const defaultIds = new Set(DEFAULT_PROMPT_TEMPLATES.map((t) => t.id));
+        // Replace the saved Character LoRA preset requested by the user.
+        const savedCharacterTemplates = (persisted.promptTemplates ?? []).filter(
+          (t) => t.id === "character_lora" || t.name.toLowerCase().replace(/[\s_-]/g, "") === "characterlora"
+        );
+        const savedCharacterIds = new Set(savedCharacterTemplates.map((t) => t.id));
+        if (persisted.selectedTemplateId && savedCharacterIds.has(persisted.selectedTemplateId)) {
+          merged.selectedTemplateId = "character_lora";
+          merged.customPrompt = CHARACTER_LORA_PROMPT;
+        }
         const userTemplates = (persisted.promptTemplates ?? []).filter(
-          (t) => !defaultIds.has(t.id)
+          (t) => !defaultIds.has(t.id) && !savedCharacterIds.has(t.id)
         );
         merged.promptTemplates = [...DEFAULT_PROMPT_TEMPLATES, ...userTemplates];
         return merged;

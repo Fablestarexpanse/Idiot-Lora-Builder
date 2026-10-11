@@ -36,6 +36,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Replace the Character LoRA caption prompt with the requested Krea2 / FLUX instructions; update saved Character LoRA templates on load.
+
 - Dialogs now stay open on outside clicks and Escape. Use their explicit close or action buttons to avoid accidentally dismissing work.
 
 - AI now appears before Tags in the right panel and opens by default at startup, as requested.
