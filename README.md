@@ -168,7 +168,7 @@ Close Compare with **X**. The main grid immediately shows the same **Good / Bad 
 
 Scores measure face similarity, not certainty or overall image quality. Human faces work best; illustrated and nonhuman characters are experimental. No-face and multiple-face images require manual review.
 
-*Screenshot demo: brightness variants of a single public-domain Grace Hopper portrait illustrate the controls; they are not an example of a varied training set or a model-accuracy benchmark. Photo: James S. Davis / U.S. Navy, [source and public-domain information](https://commons.wikimedia.org/wiki/File:Grace_Hopper.jpg).*
+*Screenshots show the Joan character set. The displayed cutoffs and ratings illustrate a review workflow; choose boundaries that suit your own dataset.*
 
 ### Shortcuts
 
