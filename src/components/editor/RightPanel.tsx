@@ -6,24 +6,12 @@ import { AiPanel } from "../ai/AiPanel";
 type Tab = "tags" | "ai";
 
 export function RightPanel() {
-  const [activeTab, setActiveTab] = useState<Tab>("tags");
+  const [activeTab, setActiveTab] = useState<Tab>("ai");
 
   return (
     <div className="flex h-full flex-col">
       {/* Tab bar */}
       <div className="flex border-b border-border">
-        <button
-          type="button"
-          onClick={() => setActiveTab("tags")}
-          className={`flex flex-1 items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${
-            activeTab === "tags"
-              ? "border-b-2 border-blue-500 text-blue-400"
-              : "text-gray-500 hover:text-gray-300"
-          }`}
-        >
-          <Tags className="h-4 w-4" />
-          Tags
-        </button>
         <button
           type="button"
           onClick={() => setActiveTab("ai")}
@@ -35,6 +23,18 @@ export function RightPanel() {
         >
           <Sparkles className="h-4 w-4" />
           AI
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("tags")}
+          className={`flex flex-1 items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${
+            activeTab === "tags"
+              ? "border-b-2 border-blue-500 text-blue-400"
+              : "text-gray-500 hover:text-gray-300"
+          }`}
+        >
+          <Tags className="h-4 w-4" />
+          Tags
         </button>
       </div>
 

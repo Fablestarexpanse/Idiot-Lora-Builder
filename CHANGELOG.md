@@ -34,6 +34,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   outright, and the grid tile's delete button (and the duplicate finder's own
   per-file delete) did nothing.
 
+### Changed
+
+- AI now appears before Tags in the right panel and opens by default at startup, as requested.
+
 ## [0.7.0] - 2026-08-17
 
 Renamed to **Idiot LoRa Builder** (new unicorn logo, app icon, window title;
@@ -195,6 +199,7 @@ dramatically faster and the UI stays responsive throughout.
 - Added a Content-Security-Policy (previously none).
 - Shell-open permission narrowed to http/https URLs.
 - LM Studio/Ollama base URLs are validated before use.
+
 
 ### Changed
 
