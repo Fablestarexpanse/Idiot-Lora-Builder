@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Larger transparent unicorn-only desktop icon for clearer taskbar identification.
+
 - Red/amber/green Bad/Middle/Good consistency cards, adjustable band boundaries, and group marking with separate selection indicators.
 
 - Character Consistency Check with mixed dataset/external baselines, local buffalo_l / ArcFace scoring, Fizgig-style suggestions, adjustable cutoff, manual review, previews, and reversible image/caption exclusions. Excluded files stay out of dataset scans, exports, duplicate checks, and bulk caption clearing.
