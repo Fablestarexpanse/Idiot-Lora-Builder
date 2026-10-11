@@ -25,7 +25,7 @@ import {
 } from "@/lib/tauri";
 import { Modal } from "@/components/ui/Modal";
 import { BuiltinSetup } from "@/components/ai/BuiltinSetup";
-import { buildEffectivePrompt } from "@/lib/promptBuilder";
+import { buildEffectivePrompt, getPromptContextLabel, isExtraOptionAvailable, isPromptContextMissing } from "@/lib/promptBuilder";
 import { buildBatchCaptionTargets } from "@/lib/batchCaptionTargets";
 import { parseTagsFromText, applyTriggerWord } from "@/lib/tags";
 import { DEFAULT_EXTRA_OPTIONS, DEFAULT_PROMPT_TEMPLATES } from "@/types";
@@ -57,6 +57,8 @@ export function AiPanel() {
   const length = useAiStore((s) => s.length);
   const characterName = useAiStore((s) => s.characterName);
   const extraOptionIds = useAiStore((s) => s.extraOptionIds);
+  const templateContexts = useAiStore((s) => s.templateContexts);
+  const setTemplateContext = useAiStore((s) => s.setTemplateContext);
   const setWordCount = useAiStore((s) => s.setWordCount);
   const setLength = useAiStore((s) => s.setLength);
   const setCharacterName = useAiStore((s) => s.setCharacterName);
@@ -103,6 +105,11 @@ export function AiPanel() {
     [promptTemplates, selectedTemplateId]
   );
 
+  const conceptDescription = templateContexts[selectedTemplateId] ?? "";
+  const contextLabel = getPromptContextLabel(selectedTemplate);
+  const contextMissing = isPromptContextMissing(selectedTemplate, conceptDescription);
+  const activeExtraOptionCount = extraOptionIds.filter((id) => isExtraOptionAvailable(selectedTemplate, id)).length;
+
   const basePrompt = useMemo(
     () => customPrompt.trim() || selectedTemplate?.prompt || "Describe this image.",
     [customPrompt, selectedTemplate]
@@ -114,8 +121,10 @@ export function AiPanel() {
       length,
       characterName,
       extraOptionIds,
+      template: selectedTemplate,
+      conceptDescription,
     }),
-    [basePrompt, wordCount, length, characterName, extraOptionIds]
+    [basePrompt, wordCount, length, characterName, extraOptionIds, selectedTemplate, conceptDescription]
   );
   
   // Memoize filtered templates to avoid re-filtering on every render
@@ -158,13 +167,21 @@ export function AiPanel() {
       name: templateName.trim(),
       prompt: customPrompt.trim() || "Describe this image.",
       provider,
+      category: selectedTemplate?.category,
+      contextKind: selectedTemplate?.contextKind,
+      description: selectedTemplate?.description,
     };
     addPromptTemplate(newTemplate);
+    if (conceptDescription) setTemplateContext(newTemplate.id, conceptDescription);
     setSelectedTemplateId(newTemplate.id);
     setShowSaveTemplate(false);
   }
 
   async function handleBatchGenerate() {
+    if (contextMissing) {
+      showToast(`Add the ${contextLabel?.toLowerCase()} in the AI panel first.`);
+      return;
+    }
     const targetImages = buildBatchCaptionTargets(
       images,
       batchCaptionRatingAll,
@@ -529,37 +546,28 @@ export function AiPanel() {
           className="w-full mb-2 rounded border border-border bg-surface px-2 py-1 text-xs text-gray-200 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
         />
         <div className="max-h-40 overflow-y-auto rounded border border-border bg-surface">
-          {filteredTemplates.map((t) => {
-            const isSelected = t.id === selectedTemplateId;
-            const isDefault = DEFAULT_PROMPT_TEMPLATES.some((d) => d.id === t.id);
-            return (
-              <div
-                key={t.id}
-                className={`group flex items-center justify-between px-2 py-1.5 text-sm cursor-pointer hover:bg-white/5 ${
-                  isSelected ? "bg-blue-600/20 text-blue-300" : "text-gray-300"
-                }`}
-                onClick={() => {
-                  setSelectedTemplateId(t.id);
-                  setCustomPrompt(t.prompt);
-                }}
-                onContextMenu={(e) => {
-                  if (isDefault) return;
-                  e.preventDefault();
-                  if (confirm(`Delete template "${t.name}"?`)) {
-                    removePromptTemplate(t.id);
-                    if (isSelected) {
-                      setSelectedTemplateId("descriptive");
-                      setCustomPrompt(promptTemplates.find((pt) => pt.id === "descriptive")?.prompt || "");
-                    }
-                  }
-                }}
-              >
-                <span className="flex-1 truncate">{t.name}</span>
-                {!isDefault && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
+          {(["lora", "caption", "writing", "custom"] as const).map((category) => {
+            const templates = filteredTemplates.filter((t) => (t.category ?? "custom") === category);
+            if (templates.length === 0) return null;
+            const labels = { lora: "LoRA training", caption: "General captions and tags", writing: "Writing tools", custom: "Custom templates" };
+            return <div key={category}>
+              <p className="px-2 pt-2 pb-1 text-[10px] uppercase tracking-wide text-gray-500">{labels[category]}</p>
+              {templates.map((t) => {
+                const isSelected = t.id === selectedTemplateId;
+                const isDefault = DEFAULT_PROMPT_TEMPLATES.some((d) => d.id === t.id);
+                return (
+                  <div
+                    key={t.id}
+                    className={`group flex items-center justify-between px-2 py-1.5 text-sm cursor-pointer hover:bg-white/5 ${
+                      isSelected ? "bg-blue-600/20 text-blue-300" : "text-gray-300"
+                    }`}
+                    onClick={() => {
+                      setSelectedTemplateId(t.id);
+                      setCustomPrompt(t.prompt);
+                    }}
+                    onContextMenu={(e) => {
+                      if (isDefault) return;
+                      e.preventDefault();
                       if (confirm(`Delete template "${t.name}"?`)) {
                         removePromptTemplate(t.id);
                         if (isSelected) {
@@ -568,17 +576,57 @@ export function AiPanel() {
                         }
                       }
                     }}
-                    className="opacity-0 group-hover:opacity-100 rounded p-0.5 text-gray-500 hover:bg-red-600/20 hover:text-red-400"
-                    title="Delete template"
                   >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            );
+                    <span className="flex-1 truncate">{t.name}</span>
+                    {!isDefault && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Delete template "${t.name}"?`)) {
+                            removePromptTemplate(t.id);
+                            if (isSelected) {
+                              setSelectedTemplateId("descriptive");
+                              setCustomPrompt(promptTemplates.find((pt) => pt.id === "descriptive")?.prompt || "");
+                            }
+                          }
+                        }}
+                        className="opacity-0 group-hover:opacity-100 rounded p-0.5 text-gray-500 hover:bg-red-600/20 hover:text-red-400"
+                        title="Delete template"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>;
           })}
         </div>
+        {selectedTemplate?.description && (
+          <p className="mt-2 text-xs text-gray-400">{selectedTemplate.description}</p>
+        )}
+        {selectedTemplate?.category === "writing" && (
+          <p className="mt-2 text-xs text-amber-400">Writing helper. Choose a LoRA training preset for dataset captions.</p>
+        )}
       </div>
+
+      {contextLabel && (
+        <div className="border-b border-border p-3">
+          <label htmlFor="lora-concept-description" className="mb-1 block text-xs text-gray-400">{contextLabel}</label>
+          <textarea
+            id="lora-concept-description"
+            value={conceptDescription}
+            onChange={(e) => setTemplateContext(selectedTemplateId, e.target.value)}
+            rows={3}
+            placeholder={selectedTemplate?.contextKind === "object" ? "Describe the specific object and its fixed design features..." : "Describe the recurring outfit, its pieces, materials and colors..."}
+            className="w-full resize-y rounded border border-border bg-surface px-2 py-1.5 text-xs text-gray-200 placeholder-gray-500"
+          />
+          <p className={`mt-1 text-xs ${contextMissing ? "text-amber-400" : "text-gray-500"}`}>
+            {contextMissing ? "Add a description before captioning so the model knows the target." : "Reference for the model, not text to copy into captions. Update when switching datasets."}
+          </p>
+        </div>
+      )}
 
       {/* Custom prompt input */}
       <div className="border-b border-border p-3">
@@ -667,7 +715,7 @@ export function AiPanel() {
         <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-xs text-gray-500 hover:text-gray-400">
           <span>
             Extra instructions
-            {extraOptionIds.length > 0 && ` (${extraOptionIds.length})`}
+            {activeExtraOptionCount > 0 && ` (${activeExtraOptionCount})`}
           </span>
           {extraOptionIds.length > 0 && (
             <button
@@ -684,7 +732,8 @@ export function AiPanel() {
         </summary>
         <div className="grid gap-1 border-t border-border bg-surface/50 p-3 sm:grid-cols-2">
           {DEFAULT_EXTRA_OPTIONS.map((option) => {
-            const checked = extraOptionIds.includes(option.id);
+            const available = isExtraOptionAvailable(selectedTemplate, option.id);
+            const checked = available && extraOptionIds.includes(option.id);
             const usesName = option.text.includes("{name}");
             return (
               <label
@@ -693,16 +742,18 @@ export function AiPanel() {
                   checked
                     ? "border-purple-500 bg-purple-500/20 text-purple-200"
                     : "border-border bg-surface text-gray-300"
-                }`}
+                } ${available ? "" : "cursor-not-allowed opacity-50"}`}
               >
                 <input
                   type="checkbox"
                   checked={checked}
+                  disabled={!available}
                   onChange={() => toggleExtraOption(option.id)}
                   className="mt-0.5 rounded border-gray-600"
                 />
                 <span className="min-w-0">
                   {option.label}
+                  {!available && <span className="block text-[10px] text-gray-500">Not used with this training preset</span>}
                   {usesName && (
                     <span className="block text-[10px] text-gray-500">
                       Uses the Character name field
@@ -836,7 +887,7 @@ export function AiPanel() {
             type="button"
             onClick={handleBatchGenerate}
             disabled={
-              batchTargetCount === 0 ||
+              batchTargetCount === 0 || contextMissing ||
               (provider === "builtin" ? !builtinReady : !isConnected)
             }
             className="flex w-full items-center justify-center gap-2 rounded bg-gray-700 px-3 py-2 text-sm font-medium text-gray-200 hover:bg-gray-600 disabled:opacity-50"

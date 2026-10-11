@@ -1,5 +1,26 @@
-import type { CaptionLength, ExtraOption } from "@/types";
+import type { CaptionLength, ExtraOption, PromptTemplate } from "@/types";
 import { DEFAULT_EXTRA_OPTIONS } from "@/types";
+
+const LORA_EXCLUDED_EXTRA_OPTIONS = new Set([
+  "camera_details", "no_fixed_attributes", "vulgar", "aesthetic_quality", "sfw_rating", "ages", "no_ambiguous", "pg",
+]);
+
+export function isExtraOptionAvailable(template: PromptTemplate | undefined, optionId: string): boolean {
+  return template?.category !== "lora" || !LORA_EXCLUDED_EXTRA_OPTIONS.has(optionId);
+}
+
+export function getPromptContextLabel(template: PromptTemplate | undefined): string | null {
+  switch (template?.contextKind) {
+    case "signature_outfit": return "Signature outfit description";
+    case "outfit": return "Target outfit description";
+    case "object": return "Target object description";
+    default: return null;
+  }
+}
+
+export function isPromptContextMissing(template: PromptTemplate | undefined, description: string): boolean {
+  return Boolean(template?.contextKind && !description.trim());
+}
 
 const NAME_PLACEHOLDER = "{name}";
 const LENGTH_PLACEHOLDER = "{length}";
@@ -27,6 +48,8 @@ export function buildEffectivePrompt(
     characterName: string;
     extraOptionIds: string[];
     extraOptions?: ExtraOption[];
+    template?: PromptTemplate;
+    conceptDescription?: string;
   }
 ): string {
   const {
@@ -35,22 +58,34 @@ export function buildEffectivePrompt(
     characterName,
     extraOptionIds,
     extraOptions = DEFAULT_EXTRA_OPTIONS,
+    template,
+    conceptDescription = "",
   } = options;
 
   let prompt = basePrompt.trim();
   prompt = substituteLength(prompt, length);
   prompt = substituteName(prompt, characterName);
 
+  if (length && !basePrompt.includes(LENGTH_PLACEHOLDER)) {
+    prompt += ` Keep the caption ${length} while preserving the requested format and visible facts; do not add filler to meet a length.`;
+  }
+
+  const contextLabel = getPromptContextLabel(template);
+  if (contextLabel && conceptDescription.trim()) {
+    prompt += ` Reference context only, not caption text: ${contextLabel}: ${JSON.stringify(conceptDescription.trim())}. Use this to identify the target; the preset's omission rules still apply. Never assume an unseen feature or object is visible.`;
+  }
+
   if (wordCount != null && wordCount > 0) {
     prompt += ` Keep it within ${wordCount} words.`;
   }
 
-  const selected = extraOptions.filter((o) => extraOptionIds.includes(o.id));
+  const selected = extraOptions.filter((o) => extraOptionIds.includes(o.id) && isExtraOptionAvailable(template, o.id));
   if (selected.length > 0) {
     const appended = selected
       .map((o) => substituteName(o.text, characterName))
       .join(" ");
     prompt += " " + appended;
+    if (template?.category === "lora") prompt += " The selected preset’s fixed-feature exclusions, visible-only rules and output format take priority over optional detail instructions.";
   }
 
   return prompt.replace(/\s+/g, " ").trim();

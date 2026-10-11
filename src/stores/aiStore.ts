@@ -9,7 +9,7 @@ import type {
   OllamaSettings,
   PromptTemplate,
 } from "@/types";
-import { CHARACTER_LORA_PROMPT, DEFAULT_PROMPT_TEMPLATES, EXTRA_OPTION_EXCLUSIVE_PAIRS } from "@/types";
+import { DEFAULT_PROMPT_TEMPLATES, EXTRA_OPTION_EXCLUSIVE_PAIRS } from "@/types";
 
 interface AiState {
   // Provider selection
@@ -25,6 +25,8 @@ interface AiState {
   length: CaptionLength | null;
   characterName: string;
   extraOptionIds: string[];
+  templateContexts: Record<string, string>;
+  setTemplateContext: (id: string, description: string) => void;
   setWordCount: (n: number | null) => void;
   setLength: (length: CaptionLength | null) => void;
   setCharacterName: (name: string) => void;
@@ -92,7 +94,7 @@ export const useAiStore = create<AiState>()(
       setProvider: (provider) => set({ provider }),
 
       // Custom prompt (matches the Descriptive template)
-      customPrompt: "Write a long detailed description for this image.",
+      customPrompt: DEFAULT_PROMPT_TEMPLATES.find((t) => t.id === "descriptive")!.prompt,
       setCustomPrompt: (customPrompt) => set({ customPrompt }),
 
       // Prompt variables
@@ -100,6 +102,10 @@ export const useAiStore = create<AiState>()(
       length: null,
       characterName: "",
       extraOptionIds: [],
+      templateContexts: {},
+      setTemplateContext: (id, description) => set((state) => ({
+        templateContexts: { ...state.templateContexts, [id]: description },
+      })),
       setWordCount: (wordCount) => set({ wordCount }),
       setLength: (length) => set({ length }),
       setCharacterName: (characterName) => set({ characterName }),
@@ -222,6 +228,7 @@ export const useAiStore = create<AiState>()(
         length: state.length,
         characterName: state.characterName,
         extraOptionIds: state.extraOptionIds,
+        templateContexts: state.templateContexts,
         lmStudio: state.lmStudio,
         ollama: state.ollama,
         builtinModelId: state.builtinModelId,
@@ -238,18 +245,16 @@ export const useAiStore = create<AiState>()(
         // Always refresh built-in templates from the current defaults so new or
         // updated defaults reach existing users; keep user-created templates.
         const defaultIds = new Set(DEFAULT_PROMPT_TEMPLATES.map((t) => t.id));
-        // Replace the saved Character LoRA preset requested by the user.
-        const savedCharacterTemplates = (persisted.promptTemplates ?? []).filter(
-          (t) => t.id === "character_lora" || t.name.toLowerCase().replace(/[\s_-]/g, "") === "characterlora"
-        );
-        const savedCharacterIds = new Set(savedCharacterTemplates.map((t) => t.id));
-        if (persisted.selectedTemplateId && savedCharacterIds.has(persisted.selectedTemplateId)) {
-          merged.selectedTemplateId = "character_lora";
-          merged.customPrompt = CHARACTER_LORA_PROMPT;
+        const savedTemplates = persisted.promptTemplates ?? [];
+        const activeSaved = savedTemplates.find((t) => t.id === persisted.selectedTemplateId);
+        const currentDefault = DEFAULT_PROMPT_TEMPLATES.find((t) => t.id === persisted.selectedTemplateId);
+        if (currentDefault) {
+          merged.selectedTemplateId = currentDefault.id;
+          if (activeSaved && (!persisted.customPrompt || persisted.customPrompt === activeSaved.prompt)) {
+            merged.customPrompt = currentDefault.prompt;
+          }
         }
-        const userTemplates = (persisted.promptTemplates ?? []).filter(
-          (t) => !defaultIds.has(t.id) && !savedCharacterIds.has(t.id)
-        );
+        const userTemplates = savedTemplates.filter((t) => !defaultIds.has(t.id));
         merged.promptTemplates = [...DEFAULT_PROMPT_TEMPLATES, ...userTemplates];
         return merged;
       },

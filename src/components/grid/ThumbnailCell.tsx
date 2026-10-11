@@ -10,7 +10,7 @@ import {
   ensureBuiltinServer,
   getBuiltinServerStatus,
 } from "@/lib/tauri";
-import { buildEffectivePrompt } from "@/lib/promptBuilder";
+import { buildEffectivePrompt, getPromptContextLabel, isPromptContextMissing } from "@/lib/promptBuilder";
 import { alignThumbRequestSize } from "@/lib/gridThumbnail";
 import { withThumbnailInvokeLimit } from "@/lib/thumbnailInvokeLimit";
 import { useAiStore } from "@/stores/aiStore";
@@ -104,12 +104,15 @@ export const ThumbnailCell = memo(function ThumbnailCell({
   const length = useAiStore((s) => s.length);
   const characterName = useAiStore((s) => s.characterName);
   const extraOptionIds = useAiStore((s) => s.extraOptionIds);
+  const templateContexts = useAiStore((s) => s.templateContexts);
   
   const selectedTemplate = useMemo(
     () => promptTemplates.find((t) => t.id === selectedTemplateId),
     [promptTemplates, selectedTemplateId]
   );
   
+  const conceptDescription = templateContexts[selectedTemplateId] ?? "";
+
   const basePrompt = useMemo(
     () => customPrompt.trim() || selectedTemplate?.prompt || "Describe this image.",
     [customPrompt, selectedTemplate]
@@ -121,8 +124,10 @@ export const ThumbnailCell = memo(function ThumbnailCell({
       length,
       characterName,
       extraOptionIds,
+      template: selectedTemplate,
+      conceptDescription,
     }),
-    [basePrompt, wordCount, length, characterName, extraOptionIds]
+    [basePrompt, wordCount, length, characterName, extraOptionIds, selectedTemplate, conceptDescription]
   );
 
   const [captionText, setCaptionText] = useState(() => tagsToText(entry.tags));
@@ -211,6 +216,9 @@ export const ThumbnailCell = memo(function ThumbnailCell({
   const model = provider === "ollama" ? ollama.model : lmStudio.model;
   const generateCaptionMutation = useMutation({
     mutationFn: async () => {
+      if (isPromptContextMissing(selectedTemplate, conceptDescription)) {
+        throw new Error(`Add the ${getPromptContextLabel(selectedTemplate)?.toLowerCase()} in the AI panel first.`);
+      }
       let effectiveBaseUrl = baseUrl;
       let effectiveModel = model;
       if (provider === "builtin") {

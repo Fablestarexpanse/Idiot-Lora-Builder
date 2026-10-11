@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildEffectivePrompt } from "@/lib/promptBuilder";
+import { DEFAULT_PROMPT_TEMPLATES } from "@/types";
 import type { ExtraOption } from "@/types";
 
 const noOptions = {
@@ -166,5 +167,47 @@ describe("buildEffectivePrompt", () => {
     expect(result).toBe(
       "Write a medium caption about Rex. Keep it within 30 words. Include information about lighting."
     );
+  });
+});
+
+
+describe("LoRA prompt controls", () => {
+  it("applies length without requiring a placeholder", () => {
+    expect(buildEffectivePrompt("Describe only visible details.", { ...noOptions, length: "short" }))
+      .toContain("Keep the caption short");
+  });
+
+  it("omits conflicting saved extra instructions but retains compatible ones", () => {
+    const template = DEFAULT_PROMPT_TEMPLATES.find((t) => t.id === "character_lora")!;
+    const prompt = buildEffectivePrompt(template.prompt, {
+      ...noOptions, template, extraOptionIds: ["camera_details", "no_fixed_attributes", "vulgar", "aesthetic_quality", "sfw_rating", "depth_of_field"],
+    });
+    expect(prompt).not.toContain("what camera was likely used");
+    expect(prompt).not.toContain("do still include changeable attributes");
+    expect(prompt).not.toContain("Use vulgar slang");
+    expect(prompt).not.toContain("subjective aesthetic quality");
+    expect(prompt).not.toContain("Include whether the image is sfw");
+    expect(prompt).toContain("Specify the depth of field");
+  });
+
+  it("includes signature outfit context without turning it into caption content", () => {
+    const template = DEFAULT_PROMPT_TEMPLATES.find((t) => t.id === "character_lora_signature_outfit")!;
+    const prompt = buildEffectivePrompt(template.prompt, {
+      ...noOptions, template, conceptDescription: "silver armor and a red skirt",
+    });
+    expect(prompt).toContain('"silver armor and a red skirt"');
+    expect(prompt).toContain("Reference context only");
+  });
+
+  it("does not leak outfit context into a different preset", () => {
+    const template = DEFAULT_PROMPT_TEMPLATES.find((t) => t.id === "character_lora")!;
+    expect(buildEffectivePrompt(template.prompt, { ...noOptions, template, conceptDescription: "silver armor" }))
+      .not.toContain('"silver armor"');
+  });
+
+  it("adds style, outfit and object training presets with distinct goals", () => {
+    for (const id of ["style_lora", "outfit_lora", "object_lora"]) {
+      expect(DEFAULT_PROMPT_TEMPLATES.find((t) => t.id === id)?.category).toBe("lora");
+    }
   });
 });

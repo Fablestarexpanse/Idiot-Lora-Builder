@@ -135,6 +135,24 @@ Everything stays with your images — no database, no cloud:
 6. **Export** — Export → choose what to export (all, selected, by rating, etc.) → pick destination.
 7. **Train** — Send to Fizgig: name the dataset, pick what to include (by rating / all / selection), and it exports into Fizgig's `dataset/<name>` folder and launches Fizgig with the path on your clipboard (set its folder in Settings → Integrations first).
 
+### Choose a caption preset for your LoRA
+
+The AI panel groups **LoRA training**, **General captions and tags**, and **Writing tools** separately. Choose the training goal before captioning:
+
+| Preset | Use it when |
+|---|---|
+| **Character LoRA** | You want the character's likeness with outfits that can change. |
+| **Character LoRA — Signature Outfit** | You want the character and recurring outfit learned together, such as an armored character. |
+| **Style LoRA** | You are training an art style. Captions describe changing subjects and scenes rather than repeatedly naming the style. Use varied subjects and compositions in the dataset. |
+| **Outfit / Armor LoRA** | You want one outfit reproduced on different wearers. |
+| **Object / Product LoRA** | You want a particular object or product design across different views and settings. |
+
+For **Signature Outfit**, **Outfit / Armor**, and **Object / Product**, fill in the description field below the preset list before captioning. Describe the fixed target features so the model can recognize what to leave out of the caption. Each preset remembers its own description; update it when switching datasets. This description is reference context, not text to copy into every caption.
+
+**Caption length** and **Word limit** apply to single-image and batch captioning. Incompatible extra instructions are disabled for LoRA training presets and excluded from the prompt even if selected in older settings. Open **Prompt used** to inspect the final instructions. Saving a custom copy of a training preset keeps its target description and extra-instruction rules.
+
+These presets guide captioning; they do not guarantee likeness, outfit or style retention. Review captions and choose a format appropriate for your model and trainer. Selecting a preset does not rewrite existing caption files.
+
 ### Compare: rate character consistency
 
 Open your image folder, then click **Compare** in the top bar beside **Batch Resize**.

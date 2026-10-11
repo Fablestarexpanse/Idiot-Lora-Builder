@@ -142,6 +142,9 @@ export interface PromptTemplate {
   name: string;
   prompt: string;
   provider: AiProvider;
+  category?: "lora" | "caption" | "writing";
+  description?: string;
+  contextKind?: "signature_outfit" | "outfit" | "object";
 }
 
 /** Optional length for caption (short/medium/long). */
@@ -162,19 +165,19 @@ export const EXTRA_OPTION_EXCLUSIVE_PAIRS: [string, string][] = [
 /** Default extra options (appendable instructions). Use {name} in text for character name substitution. */
 export const DEFAULT_EXTRA_OPTIONS: ExtraOption[] = [
   { id: "refer_name", label: "Refer to person/character as {name}", text: "If there is a person/character in the image you must refer to them as {name}." },
-  { id: "no_fixed_attributes", label: "Omit unchangeable attributes (ethnicity, gender)", text: "Do NOT include information about people/characters that cannot be changed (like ethnicity, gender, etc), but do still include changeable attributes (like hair style)." },
+  { id: "no_fixed_attributes", label: "Omit unchangeable attributes (ethnicity, gender)", text: "Do NOT include information about people/characters that cannot be changed (like ethnicity, gender, etc), Describe variable attributes only when they do not conflict with the selected preset’s fixed identity rules." },
   { id: "lighting", label: "Include lighting", text: "Include information about lighting." },
   { id: "camera_angle", label: "Include camera angle", text: "Include information about camera angle." },
   { id: "watermark", label: "Include watermark info", text: "Include information about whether there is a watermark or not." },
   { id: "jpeg_artifacts", label: "Include JPEG artifacts info", text: "Include information about whether there are JPEG artifacts or not." },
-  { id: "camera_details", label: "Include camera details (photo)", text: "If it is a photo you MUST include information about what camera was likely used and details such as aperture, shutter speed, ISO, etc." },
+  { id: "camera_details", label: "Describe visible photographic effects", text: "Describe visible photographic effects such as motion blur or shallow depth of field. Do not guess the camera, lens, aperture, shutter speed, or ISO." },
   { id: "pg", label: "Keep it PG", text: "Do NOT include anything sexual; keep it PG." },
   { id: "no_resolution", label: "Do not mention resolution", text: "Do NOT mention the image's resolution." },
   { id: "aesthetic_quality", label: "Include aesthetic quality", text: "You MUST include information about the subjective aesthetic quality of the image from low to very high." },
   { id: "composition", label: "Include composition style", text: "Include information on the image's composition style, such as leading lines, rule of thirds, or symmetry." },
   { id: "no_text_in_image", label: "Do not mention text in image", text: "Do NOT mention any text that is in the image." },
   { id: "depth_of_field", label: "Specify depth of field", text: "Specify the depth of field and whether the background is in focus or blurred." },
-  { id: "lighting_sources", label: "Mention lighting sources", text: "If applicable, mention the likely use of artificial or natural lighting sources." },
+  { id: "lighting_sources", label: "Mention lighting sources", text: "Describe visible lighting and visible light sources without guessing hidden equipment." },
   { id: "no_ambiguous", label: "Do not use ambiguous language", text: "Do NOT use any ambiguous language." },
   { id: "sfw_rating", label: "Include sfw/suggestive/nsfw", text: "Include whether the image is sfw, suggestive, or nsfw." },
   { id: "important_only", label: "Only most important elements", text: "ONLY describe the most important elements of the image." },
@@ -245,19 +248,19 @@ export const CHARACTER_LORA_PROMPT = `You are an image captioning assistant prep
 For each image, write exactly one caption as a single flowing sentence. Never prefix the caption with a number, letter, bullet, dash, label, or list marker. Never number captions or include image indices, even when processing multiple images. Do not use comma-separated tag lists or line breaks within a caption. Express any necessary visible quantities in words rather than numerals.
 
 Describe ONLY what changes from image to image:
-Framing/shot type (close-up, half-body, full-body, three-quarter)
+Framing/shot type based on what is actually visible (close-up, waist-up, three-quarter-length, full-body); do not call a cropped view full-body
 Pose and action
-Facial expression
+Facial expression and gaze direction, only when visible
 Camera angle (eye-level, low angle, high angle, from behind, profile)
 Clothing/outfit, including material and color — or state plainly "nude" / "wearing a gray bodysuit" for reference shots
-Lighting condition and direction (e.g. "soft daylight from a window", "overcast outdoor light") — never use studio-lighting language
+Lighting condition and direction, using literal descriptions of visible effects and light sources without inventing a lighting setup
 Setting/background
 Any props or interaction with the environment
 
 Do NOT describe:
-The character's fixed physical identity — species traits, face shape, ears, tail, permanent markings, tattoos, eye color, hair color/style (unless it changes between shots). These are meant to bind to the trigger token, and repeating them in every caption dilutes that.
+The character's fixed physical identity — species traits, face shape, ears, tail, permanent markings, tattoos, eye color, hair color/style (unless it changes between shots). These are intended to associate with the trigger token; omit them to focus captions on changing details.
 Art-style or quality filler words ("high quality", "detailed", "masterpiece", etc.)
-Anything not actually visible in the frame
+Anything not actually visible in the frame; do not infer props, movement, expressions, or hidden body parts
 
 Be literal and neutral. For nude reference/anatomy shots, describe pose and framing plainly and clinically (e.g. "standing nude in a neutral A-pose against a plain background") with no stylistic embellishment.
 
@@ -280,40 +283,85 @@ Held props and interactions with the environment
 
 Do NOT describe fixed identity traits such as species, face shape, ears, tail, permanent markings, tattoos, eye color, or the usual hair color and style. Do not use art-style or quality filler such as "high quality", "detailed", or "masterpiece". Do not infer actions, props, motion, or facial expressions that are not visible. Do not call a cropped view full-body.
 
-The signature outfit is the recurring outfit intended for this dataset; do not invent it or assume it is present when it is not. If an image clearly shows a different outfit, describe that alternate outfit literally. For nude reference images, state "nude" and describe pose and framing clinically. If the outfit is outside the frame, do not mention clothing at all.
+Use the supplied Signature outfit description as reference context for identifying the intended outfit. Do not copy this description into the caption. Do not assume the outfit is present when it is not. If an image clearly shows a different outfit, describe that alternate outfit literally. For nude reference images, state "nude" and describe pose and framing clinically. If the outfit is outside the frame, do not mention clothing at all.
 
 Be literal and neutral. Describe what the character is doing without describing the signature outfit itself; for example, "standing with arms crossed against a plain wall" or "sitting beside a window holding an open book". Do not invent a trigger word or character name; the application handles the configured trigger separately.
 
 Output only the caption text, beginning directly with the descriptive sentence, with no numbering, list markers, preamble, filename, heading, label, quotation marks, or explanation.`;
 
+export const CAPTION_ACCURACY_RULES = `Describe only visible evidence. Do not invent identities, props, actions, expressions, hidden details, camera settings, or lighting equipment. Use framing that matches the actual crop. Omit uncertain details rather than guess. Output only the requested caption or tags, with no preamble, headings, numbering, explanation, or generation parameters. Do not invent a trigger word; the application adds the configured trigger separately.`;
+
+export const GENERAL_CAPTION_PROMPT = `Write a concise factual natural-language training caption describing the visible subject, pose or action, clothing, setting, lighting and relevant composition. Avoid quality filler and subjective evaluation. This is a general caption, so describe visible appearance; use a dedicated LoRA preset when fixed identity, outfit, object or style details should be excluded. ${CAPTION_ACCURACY_RULES}`;
+
+export const STYLE_LORA_PROMPT = `Prepare a natural-language caption for a style LoRA. Write one flowing sentence describing the depicted content: subjects, visible appearance and clothing, actions, expressions, props, layout, setting and lighting. The recurring visual treatment is the concept to learn, so do not repeatedly name or analyze the art style, rendering technique, brushwork, quality, artist, or aesthetic. Describe changing content rather than critique the image. If text is clearly legible and relevant, transcribe it literally. ${CAPTION_ACCURACY_RULES}`;
+
+export const OUTFIT_LORA_PROMPT = `Prepare a natural-language caption for an outfit or armor LoRA that should reproduce one target outfit across different wearers. Write one flowing sentence. Use the supplied Target outfit description to identify the outfit being learned. Do not describe that outfit's fixed shape, parts, materials, colors, patterns, logos, trim, or footwear included in the target. Caption the changing wearer, visible hairstyle, expression, pose, view, framing, lighting, background, held props and other clothing outside the target. Do not bind a particular wearer's identity to the outfit by omitting every wearer attribute. If the target is absent, state that it is not visible and describe the actual clothing rather than claiming it is present. Do not infer covered anatomy. ${CAPTION_ACCURACY_RULES}`;
+
+export const OBJECT_LORA_PROMPT = `Prepare a natural-language caption for a LoRA of a specific object or product design. Write one flowing sentence. Use the supplied Target object description to identify the learned object. Refer to it by a generic class such as "the teapot" rather than repeating its fixed design, materials, colors, patterns, logos, brand, or unique markings. Describe changing view, orientation, placement, visible quantity, framing, lighting, environment, other objects, and interactions with people. If the target is absent, state that it is not visible rather than pretending it is present. Do not invent advertising claims, performance, ingredients, function, or specifications. ${CAPTION_ACCURACY_RULES}`;
+
 export const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
   {
     id: "character_lora",
     name: "Character LoRA",
+    category: "lora",
+    description: "Keep character likeness while allowing outfits to change.",
     prompt: CHARACTER_LORA_PROMPT,
     provider: "lm_studio",
   },
   {
     id: "character_lora_signature_outfit",
     name: "Character LoRA — Signature Outfit",
+    category: "lora",
+    contextKind: "signature_outfit",
+    description: "Learn the character and recurring outfit together; caption changing scenes.",
     prompt: CHARACTER_LORA_SIGNATURE_OUTFIT_PROMPT,
+    provider: "lm_studio",
+  },
+  {
+    id: "style_lora",
+    name: "Style LoRA",
+    category: "lora",
+    description: "Learn an art style while describing changing subjects, actions and scenes.",
+    prompt: STYLE_LORA_PROMPT,
+    provider: "lm_studio",
+  },
+  {
+    id: "outfit_lora",
+    name: "Outfit / Armor LoRA",
+    category: "lora",
+    contextKind: "outfit",
+    description: "Learn one outfit across different wearers.",
+    prompt: OUTFIT_LORA_PROMPT,
+    provider: "lm_studio",
+  },
+  {
+    id: "object_lora",
+    name: "Object / Product LoRA",
+    category: "lora",
+    contextKind: "object",
+    description: "Learn a specific object design across views and surroundings.",
+    prompt: OBJECT_LORA_PROMPT,
     provider: "lm_studio",
   },
   {
     id: "descriptive",
     name: "Descriptive",
-    prompt: "Write a long detailed description for this image.",
+    category: "caption",
+    description: "General factual caption; describes appearance and clothing.",
+    prompt: GENERAL_CAPTION_PROMPT,
     provider: "lm_studio",
   },
   {
     id: "straightforward",
+    category: "caption",
     name: "Straightforward",
     prompt:
-      "Write a straightforward caption for this image. Begin with the main subject and medium. Mention pivotal elements—people, objects, scenery—using confident, definite language. Focus on concrete details like color, shape, texture, and spatial relationships. Show how elements interact. Omit mood and speculative wording. If text is present, quote it exactly. Note any watermarks, signatures, or compression artifacts. Never mention what's absent, resolution, or unobservable details. Vary your sentence structure and keep the description concise, without starting with \"This image is…\" or similar phrasing.",
+      "Write a straightforward caption for this image. Begin with the main subject and medium. Mention pivotal elements—people, objects, scenery—using confident, definite language. Focus on concrete details like color, shape, texture, and spatial relationships. Show how elements interact. Omit mood and speculative wording. If text is present, quote it exactly. Note any watermarks, signatures, or compression artifacts. Never mention what's absent, resolution, or unobservable details. Vary your sentence structure and keep the description concise, without starting with \"This image is…\" or similar phrasing." + " " + CAPTION_ACCURACY_RULES,
     provider: "lm_studio",
   },
   {
     id: "stable_diffusion",
+    category: "writing",
     name: "Stable Diffusion Prompt",
     prompt:
       "Output a stable diffusion prompt that is indistinguishable from a real stable diffusion prompt.",
@@ -321,39 +369,45 @@ export const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
   },
   {
     id: "midjourney",
+    category: "writing",
     name: "MidJourney",
     prompt: "Write a MidJourney prompt for this image.",
     provider: "lm_studio",
   },
   {
     id: "danbooru",
+    category: "caption",
     name: "Danbooru Tags",
     prompt:
-      "Generate only comma-separated Danbooru tags (lowercase_underscores). Strict order: artist:, copyright:, character:, meta:, then general tags. Include counts (1girl), appearance, clothing, accessories, pose, expression, actions, background. Use precise Danbooru syntax. No extra text.",
+      "Generate only comma-separated Danbooru tags (lowercase_underscores). Strict order: artist:, copyright:, character:, meta:, then general tags. Include counts (1girl), appearance, clothing, accessories, pose, expression, actions, background. Use precise Danbooru syntax. Omit artist, copyright and character identity tags unless explicitly supplied; never guess them. No extra text." + " " + CAPTION_ACCURACY_RULES,
     provider: "lm_studio",
   },
   {
     id: "e621",
+    category: "caption",
     name: "e621 Tags",
     prompt:
-      "Write a comma-separated list of e621 tags in alphabetical order for this image. Start with the artist, copyright, character, species, meta, and lore tags (if any), prefixed by 'artist:', 'copyright:', 'character:', 'species:', 'meta:', and 'lore:'. Then all the general tags.",
+      "Write a comma-separated list of e621 tags in alphabetical order for this image. Start with the artist, copyright, character, species, meta, and lore tags (if any), prefixed by 'artist:', 'copyright:', 'character:', 'species:', 'meta:', and 'lore:'. Then all the general tags. Omit artist, copyright, character, meta or lore attribution unless explicitly supplied; never guess names or provenance." + " " + CAPTION_ACCURACY_RULES,
     provider: "lm_studio",
   },
   {
     id: "rule34",
+    category: "caption",
     name: "Rule34 Tags",
     prompt:
-      "Write a comma-separated list of rule34 tags in alphabetical order for this image. Start with the artist, copyright, character, and meta tags (if any), prefixed by 'artist:', 'copyright:', 'character:', and 'meta:'. Then all the general tags.",
+      "Write a comma-separated list of rule34 tags in alphabetical order for this image. Start with the artist, copyright, character, and meta tags (if any), prefixed by 'artist:', 'copyright:', 'character:', and 'meta:'. Then all the general tags. Omit artist, copyright, character, meta or lore attribution unless explicitly supplied; never guess names or provenance." + " " + CAPTION_ACCURACY_RULES,
     provider: "lm_studio",
   },
   {
     id: "booru_like",
+    category: "caption",
     name: "Booru-Like Tags",
-    prompt: "Write a list of Booru-like tags for this image.",
+    prompt: "Output only comma-separated lowercase booru-style tags with underscores instead of spaces. Cover visible subject count, appearance, clothing, pose, expression, actions and background. Use only supported tags; do not invent artist, copyright, franchise or character names." + " " + CAPTION_ACCURACY_RULES,
     provider: "lm_studio",
   },
   {
     id: "art_critic",
+    category: "writing",
     name: "Art Critic Analysis",
     prompt:
       "Analyze this image like an art critic would with information about its composition, style, symbolism, the use of color, light, any artistic movement it might belong to, etc.",
@@ -361,12 +415,14 @@ export const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
   },
   {
     id: "product_listing",
+    category: "writing",
     name: "Product Listing",
     prompt: "Write a caption for this image as though it were a product listing.",
     provider: "lm_studio",
   },
   {
     id: "social_media",
+    category: "writing",
     name: "Social Media Post",
     prompt:
       "Write a caption for this image as if it were being used for a social media post.",
@@ -374,23 +430,26 @@ export const DEFAULT_PROMPT_TEMPLATES: PromptTemplate[] = [
   },
   {
     id: "builtin-prose",
+    category: "caption",
     name: "Built-in: Prose",
     prompt:
-      "Describe this image in 1-3 natural-language sentences suitable as a training caption. State the main subject first, then key visual details: appearance, clothing, pose, setting, lighting, and style/medium. Use confident, concrete wording. Output ONLY the description — no preamble, no quotes, no phrases like \"This image shows\", and no commentary.",
+      "Describe this image in 1-3 natural-language sentences suitable as a training caption. State the main subject first, then key visual details: appearance, clothing, pose, setting, lighting, and style/medium. Use confident, concrete wording. Output ONLY the description — no preamble, no quotes, no phrases like \"This image shows\", and no commentary." + " " + CAPTION_ACCURACY_RULES,
     provider: "builtin",
   },
   {
     id: "builtin-danbooru",
+    category: "caption",
     name: "Built-in: Danbooru Tags",
     prompt:
-      "Output ONLY a comma-separated list of lowercase danbooru-style tags for this image, with underscores instead of spaces (e.g. 1girl, long_hair, blue_eyes, school_uniform, outdoors). Cover subject count, appearance, clothing, accessories, pose, expression, actions, background, and composition. No prose, no sentences, no explanations, no preamble — nothing but the tag list.",
+      "Output ONLY a comma-separated list of lowercase danbooru-style tags for this image, with underscores instead of spaces (e.g. 1girl, long_hair, blue_eyes, school_uniform, outdoors). Cover subject count, appearance, clothing, accessories, pose, expression, actions, background, and composition. No prose, no sentences, no explanations, no preamble — nothing but the tag list." + " " + CAPTION_ACCURACY_RULES,
     provider: "builtin",
   },
   {
     id: "builtin-e621",
+    category: "caption",
     name: "Built-in: e621 Tags",
     prompt:
-      "Output ONLY a comma-separated list of lowercase e621-style tags for this image, with underscores instead of spaces, using e621/furry vocabulary (e.g. anthro, feral, male, female, canine, felid, fur_color tags, clothing, pose, expression, background, solo/duo/group). No prose, no sentences, no explanations, no preamble — nothing but the tag list.",
+      "Output ONLY a comma-separated list of lowercase e621-style tags for this image, with underscores instead of spaces, using e621/furry vocabulary (e.g. anthro, feral, male, female, canine, felid, fur_color tags, clothing, pose, expression, background, solo/duo/group). No prose, no sentences, no explanations, no preamble — nothing but the tag list." + " " + CAPTION_ACCURACY_RULES,
     provider: "builtin",
   },
 ];
