@@ -1,6 +1,6 @@
 # README Compare walkthrough (2026-10-11)
 
-NEXT: Documentation and screenshot verification complete; commit and push the README update to main.
+NEXT: Renamed-file screenshots verified and ready to publish on main.
 
 User requested new README image examples showing how to use the latest features. Capture three real screenshots from the current bundled desktop build: per-slot dataset reference picker, comparison review with Good/Bad/Needs Edit overrides and apply actions, and saved ratings on the main grid. Refresh the README hero screenshot too. Use only a disposable demo dataset with brightness variants of the public-domain Grace Hopper U.S. Navy portrait; do not publish personal dataset images. Credit the source and explicitly describe the sample as a controls demonstration, not a varied training set or accuracy benchmark.
 
@@ -12,3 +12,8 @@ Verified all four README screenshots exist and are valid 1280x1080 PNGs; inspect
 User corrected the screenshot choice: use the Joan set currently loaded in the app. Located the loaded folder through the app profile and copied its 70 image files to a disposable temporary Joan folder for screenshot capture. Leave the user's open app, originals and ratings unchanged. Use front/three-quarter/expression references from this actual character set. Replace all four demo screenshots and remove the Grace Hopper demo attribution.
 
 Verified the Joan copy scan: 70 images, 68 scored faces, 64 eligible ratings saved only in the temporary copy. Captured references, reviewed suggestions with two manual overrides, and main-grid ratings. Limited the screenshot-session caption preview to Good so its green highlight does not obscure Bad/Needs Edit borders. Original Joan folder still has no .lora-studio metadata, and the original app process remains open and responsive. All four screenshots were visually checked and all README image paths validated.
+
+## Renamed Joan files
+User renamed the dataset files for publication and requested new screenshots. Verified image content hashes against the prior screenshot copy; preserve the same reference images and review examples under their new Joan filenames. Capture from a new temporary copy and isolated app profile, leaving the loaded original dataset untouched.
+
+Recaptured all four 1280x1080 screenshots with Joan_0001.png-style filenames. Real scan again scored 68 faces and saved 64 eligible ratings in the disposable copy. References Joan_0001, Joan_0002 and Joan_0006 match the prior image content exactly. Verified original image names and hashes are unchanged, README image links resolve, and main-grid rating colors remain visible.
