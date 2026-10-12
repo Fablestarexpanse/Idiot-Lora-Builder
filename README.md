@@ -119,6 +119,12 @@ Everything stays with your images — no database, no cloud:
 
 **Links:** [Ollama](https://ollama.com/) · [Library](https://ollama.com/library)
 
+### Dependency audit messages during setup
+
+`npm install` may report dependency vulnerabilities and still finish successfully. If the window says **Setup complete**, installation succeeded; start the app with `run.bat`. An audit warning is a separate dependency-maintenance report, not evidence that the app was infected.
+
+Keep your checkout updated and rerun `install.bat` after dependency updates. `npm audit` checks all dependencies; `npm audit --omit=dev` checks production dependencies. This source-based launcher also uses development/build tools, so warnings in that group still need review. Avoid `npm audit fix --force` as a routine install step: it can replace major versions of the build tools and break the app's styling or build.
+
 ### Tips
 
 - Use a **vision** model (e.g. LLaVA, Llama 3.2 Vision); text-only models won't caption images.
