@@ -71,6 +71,14 @@ The Tauri CLI is a dev dependency (`@tauri-apps/cli`), installed automatically �
 
 The very first launch compiles the app and takes a few minutes; after that it starts fast. Keep the console window open while the app runs — closing it stops the app.
 
+### Update on Windows
+
+Close the app and its launcher window, then double-click **`update.bat`**. It checks GitHub main, downloads updates and refreshes dependencies. When it says **Update complete**, open **`run.bat`**. The next launch recompiles changed code as needed.
+
+[Git for Windows](https://git-scm.com/download/win) must be installed along with Node.js and Rust. The updater stops if program files have local edits, local commits or a different branch. It never discards those changes. If installation or the connection fails, fix the reported issue and rerun `update.bat`.
+
+For ZIP downloads, the first update creates **`Idiot-Lora-Builder-updated`** beside your original folder. Use `run.bat` and `update.bat` in that new folder from then on. Your original folder stays intact. If datasets are inside it, reopen them from their existing location. App settings and downloaded models are retained.
+
 ### Manual way (any OS)
 
 ```bash
@@ -123,7 +131,7 @@ Everything stays with your images — no database, no cloud:
 
 `npm install` may report dependency vulnerabilities and still finish successfully. If the window says **Setup complete**, installation succeeded; start the app with `run.bat`. An audit warning is a separate dependency-maintenance report, not evidence that the app was infected.
 
-Keep your checkout updated and rerun `install.bat` after dependency updates. `npm audit` checks all dependencies; `npm audit --omit=dev` checks production dependencies. This source-based launcher also uses development/build tools, so warnings in that group still need review. Avoid `npm audit fix --force` as a routine install step: it can replace major versions of the build tools and break the app's styling or build.
+Use `update.bat` on Windows to update the checkout and refresh dependencies, or update manually and rerun `install.bat`. `npm audit` checks all dependencies; `npm audit --omit=dev` checks production dependencies. This source-based launcher also uses development/build tools, so warnings in that group still need review. Avoid `npm audit fix --force` as a routine install step: it can replace major versions of the build tools and break the app's styling or build.
 
 ### Tips
 
