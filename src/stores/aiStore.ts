@@ -26,6 +26,8 @@ interface AiState {
   characterName: string;
   extraOptionIds: string[];
   templateContexts: Record<string, string>;
+  skipTemplateContexts: Record<string, boolean>;
+  setSkipTemplateContext: (id: string, skip: boolean) => void;
   setTemplateContext: (id: string, description: string) => void;
   setWordCount: (n: number | null) => void;
   setLength: (length: CaptionLength | null) => void;
@@ -103,6 +105,10 @@ export const useAiStore = create<AiState>()(
       characterName: "",
       extraOptionIds: [],
       templateContexts: {},
+      skipTemplateContexts: {},
+      setSkipTemplateContext: (id, skip) => set((state) => ({
+        skipTemplateContexts: { ...state.skipTemplateContexts, [id]: skip },
+      })),
       setTemplateContext: (id, description) => set((state) => ({
         templateContexts: { ...state.templateContexts, [id]: description },
       })),
@@ -229,6 +235,7 @@ export const useAiStore = create<AiState>()(
         characterName: state.characterName,
         extraOptionIds: state.extraOptionIds,
         templateContexts: state.templateContexts,
+        skipTemplateContexts: state.skipTemplateContexts,
         lmStudio: state.lmStudio,
         ollama: state.ollama,
         builtinModelId: state.builtinModelId,

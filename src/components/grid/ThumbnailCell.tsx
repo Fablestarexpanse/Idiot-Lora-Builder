@@ -105,6 +105,7 @@ export const ThumbnailCell = memo(function ThumbnailCell({
   const characterName = useAiStore((s) => s.characterName);
   const extraOptionIds = useAiStore((s) => s.extraOptionIds);
   const templateContexts = useAiStore((s) => s.templateContexts);
+  const skipTemplateContexts = useAiStore((s) => s.skipTemplateContexts);
   
   const selectedTemplate = useMemo(
     () => promptTemplates.find((t) => t.id === selectedTemplateId),
@@ -112,6 +113,7 @@ export const ThumbnailCell = memo(function ThumbnailCell({
   );
   
   const conceptDescription = templateContexts[selectedTemplateId] ?? "";
+  const skipContext = skipTemplateContexts[selectedTemplateId] ?? false;
 
   const basePrompt = useMemo(
     () => customPrompt.trim() || selectedTemplate?.prompt || "Describe this image.",
@@ -126,8 +128,9 @@ export const ThumbnailCell = memo(function ThumbnailCell({
       extraOptionIds,
       template: selectedTemplate,
       conceptDescription,
+      skipContext,
     }),
-    [basePrompt, wordCount, length, characterName, extraOptionIds, selectedTemplate, conceptDescription]
+    [basePrompt, wordCount, length, characterName, extraOptionIds, selectedTemplate, conceptDescription, skipContext]
   );
 
   const [captionText, setCaptionText] = useState(() => tagsToText(entry.tags));
@@ -216,8 +219,8 @@ export const ThumbnailCell = memo(function ThumbnailCell({
   const model = provider === "ollama" ? ollama.model : lmStudio.model;
   const generateCaptionMutation = useMutation({
     mutationFn: async () => {
-      if (isPromptContextMissing(selectedTemplate, conceptDescription)) {
-        throw new Error(`Add the ${getPromptContextLabel(selectedTemplate)?.toLowerCase()} in the AI panel first.`);
+      if (isPromptContextMissing(selectedTemplate, conceptDescription, skipContext)) {
+        throw new Error(`Add the ${getPromptContextLabel(selectedTemplate)?.toLowerCase()} or check Run without a description in the AI panel.`);
       }
       let effectiveBaseUrl = baseUrl;
       let effectiveModel = model;

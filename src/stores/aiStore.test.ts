@@ -86,3 +86,24 @@ it("preserves a user-created template even when its name matches a built-in", ()
   expect(state.customPrompt).toBe(template.prompt);
   expect(state.promptTemplates).toContainEqual(template);
 });
+
+
+it("persists the description bypass independently per preset", () => {
+  const original = useAiStore.getState();
+  const storage = useAiStore.persist.getOptions().storage;
+  const setItem = vi.fn();
+  useAiStore.persist.setOptions({ storage: { getItem: () => null, setItem, removeItem: () => {} } });
+  try {
+    original.setSkipTemplateContext("character_lora_signature_outfit", true);
+    expect(useAiStore.getState().skipTemplateContexts.character_lora_signature_outfit).toBe(true);
+    expect(useAiStore.getState().skipTemplateContexts.object_lora).toBeUndefined();
+    const persisted = setItem.mock.lastCall?.[1].state;
+    const restored = merge(persisted, original);
+    expect(restored.skipTemplateContexts.character_lora_signature_outfit).toBe(true);
+    original.setSkipTemplateContext("character_lora_signature_outfit", false);
+    expect(useAiStore.getState().skipTemplateContexts.character_lora_signature_outfit).toBe(false);
+  } finally {
+    useAiStore.setState(original, true);
+    useAiStore.persist.setOptions({ storage });
+  }
+});

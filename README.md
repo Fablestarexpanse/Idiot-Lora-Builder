@@ -153,7 +153,7 @@ The AI panel groups **LoRA training**, **General captions and tags**, and **Writ
 | **Outfit / Armor LoRA** | You want one outfit reproduced on different wearers. |
 | **Object / Product LoRA** | You want a particular object or product design across different views and settings. |
 
-For **Signature Outfit**, **Outfit / Armor**, and **Object / Product**, fill in the description field below the preset list before captioning. Describe the fixed target features so the model can recognize what to leave out of the caption. Each preset remembers its own description; update it when switching datasets. This description is reference context, not text to copy into every caption.
+For **Signature Outfit**, **Outfit / Armor**, and **Object / Product**, fill in the description field below the preset list, or check **Run without a description** to caption using the preset alone. Describe the fixed target features so the model can recognize what to leave out of the caption. Each preset remembers its own description and checkbox choice; update them when switching datasets. Checking the box retains your saved text but leaves it out of the prompt until you uncheck it. This description is reference context, not text to copy into every caption.
 
 **Caption length** and **Word limit** apply to single-image and batch captioning. Incompatible extra instructions are disabled for LoRA training presets and excluded from the prompt even if selected in older settings. Open **Prompt used** to inspect the final instructions. Saving a custom copy of a training preset keeps its target description and extra-instruction rules.
 

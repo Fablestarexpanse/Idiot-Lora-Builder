@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildEffectivePrompt } from "@/lib/promptBuilder";
+import { buildEffectivePrompt, isPromptContextMissing } from "@/lib/promptBuilder";
 import { DEFAULT_PROMPT_TEMPLATES } from "@/types";
 import type { ExtraOption } from "@/types";
 
@@ -209,5 +209,24 @@ describe("LoRA prompt controls", () => {
     for (const id of ["style_lora", "outfit_lora", "object_lora"]) {
       expect(DEFAULT_PROMPT_TEMPLATES.find((t) => t.id === id)?.category).toBe("lora");
     }
+  });
+});
+
+
+describe("Optional target description", () => {
+  it.each(["character_lora_signature_outfit", "outfit_lora", "object_lora"])("allows %s without context only when explicitly skipped", (id) => {
+    const template = DEFAULT_PROMPT_TEMPLATES.find((t) => t.id === id)!;
+    expect(isPromptContextMissing(template, " ")).toBe(true);
+    expect(isPromptContextMissing(template, " ", true)).toBe(false);
+    expect(isPromptContextMissing(template, "target description")).toBe(false);
+  });
+
+  it("omits a saved description when bypassed and supplies instructions for running without it", () => {
+    const template = DEFAULT_PROMPT_TEMPLATES.find((t) => t.id === "character_lora_signature_outfit")!;
+    const prompt = buildEffectivePrompt(template.prompt, {
+      ...noOptions, template, conceptDescription: "my saved outfit details", skipContext: true,
+    });
+    expect(prompt).not.toContain("my saved outfit details");
+    expect(prompt).toContain("No reference description was supplied");
   });
 });

@@ -18,8 +18,8 @@ export function getPromptContextLabel(template: PromptTemplate | undefined): str
   }
 }
 
-export function isPromptContextMissing(template: PromptTemplate | undefined, description: string): boolean {
-  return Boolean(template?.contextKind && !description.trim());
+export function isPromptContextMissing(template: PromptTemplate | undefined, description: string, skipContext = false): boolean {
+  return Boolean(template?.contextKind && !skipContext && !description.trim());
 }
 
 const NAME_PLACEHOLDER = "{name}";
@@ -50,6 +50,7 @@ export function buildEffectivePrompt(
     extraOptions?: ExtraOption[];
     template?: PromptTemplate;
     conceptDescription?: string;
+    skipContext?: boolean;
   }
 ): string {
   const {
@@ -60,6 +61,7 @@ export function buildEffectivePrompt(
     extraOptions = DEFAULT_EXTRA_OPTIONS,
     template,
     conceptDescription = "",
+    skipContext = false,
   } = options;
 
   let prompt = basePrompt.trim();
@@ -71,8 +73,12 @@ export function buildEffectivePrompt(
   }
 
   const contextLabel = getPromptContextLabel(template);
-  if (contextLabel && conceptDescription.trim()) {
+  if (contextLabel && !skipContext && conceptDescription.trim()) {
     prompt += ` Reference context only, not caption text: ${contextLabel}: ${JSON.stringify(conceptDescription.trim())}. Use this to identify the target; the preset's omission rules still apply. Never assume an unseen feature or object is visible.`;
+  }
+
+  if (contextLabel && skipContext) {
+    prompt += " No reference description was supplied; this is intentional. Follow the preset using only visible evidence and do not ask for a description. Treat the visible subject or worn outfit as the intended target according to the preset. Do not guess whether an outfit is an alternate or invent unseen target features. Retain the preset’s fixed-feature omissions and output format.";
   }
 
   if (wordCount != null && wordCount > 0) {

@@ -59,6 +59,8 @@ export function AiPanel() {
   const extraOptionIds = useAiStore((s) => s.extraOptionIds);
   const templateContexts = useAiStore((s) => s.templateContexts);
   const setTemplateContext = useAiStore((s) => s.setTemplateContext);
+  const skipTemplateContexts = useAiStore((s) => s.skipTemplateContexts);
+  const setSkipTemplateContext = useAiStore((s) => s.setSkipTemplateContext);
   const setWordCount = useAiStore((s) => s.setWordCount);
   const setLength = useAiStore((s) => s.setLength);
   const setCharacterName = useAiStore((s) => s.setCharacterName);
@@ -107,7 +109,8 @@ export function AiPanel() {
 
   const conceptDescription = templateContexts[selectedTemplateId] ?? "";
   const contextLabel = getPromptContextLabel(selectedTemplate);
-  const contextMissing = isPromptContextMissing(selectedTemplate, conceptDescription);
+  const skipContext = skipTemplateContexts[selectedTemplateId] ?? false;
+  const contextMissing = isPromptContextMissing(selectedTemplate, conceptDescription, skipContext);
   const activeExtraOptionCount = extraOptionIds.filter((id) => isExtraOptionAvailable(selectedTemplate, id)).length;
 
   const basePrompt = useMemo(
@@ -123,8 +126,9 @@ export function AiPanel() {
       extraOptionIds,
       template: selectedTemplate,
       conceptDescription,
+      skipContext,
     }),
-    [basePrompt, wordCount, length, characterName, extraOptionIds, selectedTemplate, conceptDescription]
+    [basePrompt, wordCount, length, characterName, extraOptionIds, selectedTemplate, conceptDescription, skipContext]
   );
   
   // Memoize filtered templates to avoid re-filtering on every render
@@ -173,13 +177,14 @@ export function AiPanel() {
     };
     addPromptTemplate(newTemplate);
     if (conceptDescription) setTemplateContext(newTemplate.id, conceptDescription);
+    if (skipContext) setSkipTemplateContext(newTemplate.id, true);
     setSelectedTemplateId(newTemplate.id);
     setShowSaveTemplate(false);
   }
 
   async function handleBatchGenerate() {
     if (contextMissing) {
-      showToast(`Add the ${contextLabel?.toLowerCase()} in the AI panel first.`);
+      showToast(`Add the ${contextLabel?.toLowerCase()} or check Run without a description in the AI panel.`);
       return;
     }
     const targetImages = buildBatchCaptionTargets(
@@ -617,13 +622,23 @@ export function AiPanel() {
           <textarea
             id="lora-concept-description"
             value={conceptDescription}
+            disabled={skipContext}
             onChange={(e) => setTemplateContext(selectedTemplateId, e.target.value)}
             rows={3}
             placeholder={selectedTemplate?.contextKind === "object" ? "Describe the specific object and its fixed design features..." : "Describe the recurring outfit, its pieces, materials and colors..."}
-            className="w-full resize-y rounded border border-border bg-surface px-2 py-1.5 text-xs text-gray-200 placeholder-gray-500"
+            className="w-full resize-y rounded border border-border bg-surface px-2 py-1.5 text-xs text-gray-200 placeholder-gray-500 disabled:opacity-50"
           />
+          <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-gray-300">
+            <input
+              type="checkbox"
+              checked={skipContext}
+              onChange={(e) => setSkipTemplateContext(selectedTemplateId, e.target.checked)}
+              className="rounded border-gray-600"
+            />
+            Run without a description
+          </label>
           <p className={`mt-1 text-xs ${contextMissing ? "text-amber-400" : "text-gray-500"}`}>
-            {contextMissing ? "Add a description before captioning so the model knows the target." : "Reference for the model, not text to copy into captions. Update when switching datasets."}
+            {skipContext ? "Captioning will use the preset without a reference description." : contextMissing ? "Add a description or check the box above to run without one." : "Reference for the model, not text to copy into captions. Update when switching datasets."}
           </p>
         </div>
       )}

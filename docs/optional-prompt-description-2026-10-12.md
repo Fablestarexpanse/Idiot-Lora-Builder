@@ -1,0 +1,7 @@
+# Optional LoRA target descriptions
+
+NEXT: Verification complete; commit and publish the checkbox fix.
+
+User corrected the required-description behavior: they must be able to choose to run without filling the field. Add Run without a description to any preset with a context field, including saved custom copies. Persist the choice per preset, keep saved description text when bypassing, and omit it from final instructions while bypassed. Both single and batch guards must honor the same choice. Without reference context, tell the captioner to follow the preset and avoid guessing which details are alternate outfit features. Existing users remain unchecked until they choose bypass.
+
+Verification: all 207 frontend tests passed, the frontend and native desktop builds succeeded, focused lint and diff checks passed. A real isolated desktop run confirmed single and batch caption delivery for Signature Outfit, Outfit / Armor and Object / Product with empty descriptions; separate persisted choices; retained description text; and custom-template copies. Controlled local caption responses and a disposable image copy were used to verify delivery and saving, not model caption quality. The original dataset was untouched.
