@@ -186,9 +186,7 @@ pub struct FindDuplicatesResult {
 /// each pixel is brighter than the one to its right. The 64 bits that come out
 /// survive re-encoding and rescaling, which a content hash cannot.
 /// Returns None for anything that won't decode — advisory, never fatal, so an
-/// unreadable file is simply left ungrouped. Note `.bmp` is in
-/// `IMAGE_EXTENSIONS` but not in the `image` crate's enabled features, so bmps
-/// are skipped here (they still group in exact mode, which never decodes).
+/// unreadable file is simply left ungrouped.
 fn dhash(path: &Path) -> Option<u64> {
     let img = ImageReader::open(path).ok()?.decode().ok()?;
     let small = imageops::resize(&img.to_luma8(), 9, 8, imageops::FilterType::Triangle);

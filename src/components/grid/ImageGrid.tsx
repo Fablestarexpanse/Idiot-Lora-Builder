@@ -20,7 +20,13 @@ import { buildBatchCaptionTargets } from "@/lib/batchCaptionTargets";
 import { ensureThumbnailUrlsBatch } from "@/lib/tauri";
 import { matchThumbnailPreset } from "@/lib/thumbnailPresets";
 import { selectVisibleImages } from "@/lib/imageFilter";
+import { findSharedCaptions } from "@/lib/sharedCaptions";
+import { useProjectStore } from "@/stores/projectStore";
+import { useUiStore } from "@/stores/uiStore";
 import { ThumbnailCell } from "./ThumbnailCell";
+
+/** Folder already warned about shared captions; module-level so a grid remount doesn't repeat it. */
+let sharedCaptionWarnedRoot: string | null = null;
 
 /** Base target minimum cell width (CSS px); multiplied by settings `gridMinCellScale`. */
 const GRID_BASE_MIN_CELL = 104;
@@ -39,7 +45,19 @@ export const ImageGrid = memo(function ImageGrid() {
   const queryClient = useQueryClient();
   const thumbnailMax = useSettingsStore((s) => s.thumbnailSize);
   const gridMinCellScale = useSettingsStore((s) => s.gridMinCellScale);
-  const { data: allImages = [], isLoading, isError } = useProjectImages();
+  const { data: allImages = [], isLoading, isError, isSuccess } = useProjectImages();
+  const rootPath = useProjectStore((s) => s.rootPath);
+
+  useEffect(() => {
+    if (!isSuccess || !rootPath || sharedCaptionWarnedRoot === rootPath) return;
+    sharedCaptionWarnedRoot = rootPath;
+    const shared = findSharedCaptions(allImages.map((img) => img.relative_path));
+    if (shared.length === 0) return;
+    useUiStore.getState().showToast(
+      `${shared.length} caption file(s) are shared by images that differ only by extension ` +
+        `(e.g. ${shared[0].join(" and ")}). Editing one overwrites the other; rename one image in each pair.`
+    );
+  }, [isSuccess, rootPath, allImages]);
 
   const [layout, setLayout] = useState({ innerWidth: 0, columnCount: 5 });
   const { innerWidth: gridInnerWidth, columnCount } = layout;
