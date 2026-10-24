@@ -15,7 +15,7 @@ A desktop app for preparing image datasets for AI training (LoRA, DreamBooth, et
 
 ## Features
 
-- **Grid & ratings** — Open a folder, rate images (Good / Bad / Needs Edit), virtualized grid for thousands of images. Multi-select with Ctrl+Click, Shift+Click range select, Ctrl+A select-all-visible; rate or delete the whole selection at once
+- **Grid & ratings** — Open a folder, rate images (Good / Bad / Needs Edit), virtualized grid for thousands of images. Multi-select with Ctrl+Click, Shift+Click range select, Ctrl+A select-all-visible; rate or delete the whole selection at once (deleted images and their captions go to the Recycle Bin)
 - **Filtering & sorting** — Filter by rating, caption state, crop status, or search text; sort by name/size/dimensions
 - **Tag editing** — Inline captions, right-panel tag editor, search/replace, trigger word (always kept first, including on AI-generated captions), add-tag-to-all with preview
 - **AI captioning** — Built-in local captioner (one-click download of a Qwen3-VL vision model, runs fully offline on GPU via Vulkan or CPU), or connect to LM Studio / Ollama; single or batch; rating filter; Prose / Danbooru / e621 caption style presets; caption length control and 26 toggleable extra instructions (lighting, camera angle, shot type, PG vs. blunt language, refer-by-name, …)

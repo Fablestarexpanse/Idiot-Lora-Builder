@@ -642,7 +642,7 @@ export const ThumbnailCell = memo(function ThumbnailCell({
       >
         <p className="text-sm text-gray-400">
           Are you sure you want to delete this image from the folder? The
-          file and its caption will be removed. This cannot be undone.
+          file and its caption are moved to the Recycle Bin.
         </p>
       </ConfirmModal>
 

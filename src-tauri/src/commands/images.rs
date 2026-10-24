@@ -20,7 +20,7 @@ use std::path::PathBuf;
 
 use once_cell::sync::Lazy;
 
-use super::common::caption_path_for;
+use super::common::{caption_path_for, IMAGE_EXTENSIONS};
 
 const THUMB_SIZE: u32 = 256;
 /// Upper bound for requested edge length (HiDPI grid cells + crisp factor on the front end).
@@ -662,7 +662,22 @@ fn batch_resize_sync(payload: BatchResizePayload) -> Result<BatchResizeResult, S
     })
 }
 
-/// Delete a single image file and its caption .txt from disk (shared by the
+/// Files to remove when deleting an image: the image, plus its caption .txt
+/// unless another image with the same stem (a.jpg beside a.png) still uses it.
+fn files_to_delete(path: &Path) -> Vec<PathBuf> {
+    let mut files = vec![path.to_path_buf()];
+    let own_ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let caption_shared = IMAGE_EXTENSIONS
+        .iter()
+        .any(|ext| *ext != own_ext && path.with_extension(ext).is_file());
+    let txt_path = caption_path_for(path);
+    if !caption_shared && txt_path.is_file() {
+        files.push(txt_path);
+    }
+    files
+}
+
+/// Move an image and its caption .txt to the Recycle Bin / Trash (shared by the
 /// single and batch delete commands).
 fn delete_image_file(image_path: &str) -> Result<(), String> {
     let path = PathBuf::from(image_path);
@@ -673,18 +688,20 @@ fn delete_image_file(image_path: &str) -> Result<(), String> {
     // only receives the absolute image path, not the project root needed to locate
     // the `.lora-studio/crop_status.json` sidecar. Stale entries are harmless
     // (lookups are keyed by existing images) and get dropped on clear-all.
-    std::fs::remove_file(&path).map_err(|e| e.to_string())?;
-    let txt_path = caption_path_for(&path);
-    if txt_path.exists() && txt_path.is_file() {
-        let _ = std::fs::remove_file(&txt_path);
-    }
-    Ok(())
+    let files = files_to_delete(&path);
+    // Fresh thread: on Windows `trash` panics if the calling thread already set up COM in another mode.
+    std::thread::spawn(move || trash::delete_all(files))
+        .join()
+        .map_err(|_| "Moving the image to the Recycle Bin failed".to_string())?
+        .map_err(|e| e.to_string())
 }
 
-/// Delete an image file and its caption .txt from disk.
+/// Move an image file and its caption .txt to the Recycle Bin / Trash.
 #[tauri::command]
-pub fn delete_image(image_path: String) -> Result<(), String> {
-    delete_image_file(&image_path)
+pub async fn delete_image(image_path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || delete_image_file(&image_path))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[derive(Debug, Deserialize)]
@@ -814,6 +831,17 @@ fn multi_crop_sync(payload: MultiCropPayload) -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delete_keeps_a_caption_another_image_shares() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["a.jpg", "a.png", "a.txt", "b.JPG", "b.txt"] {
+            fs::write(dir.path().join(name), b"x").unwrap();
+        }
+        assert_eq!(files_to_delete(&dir.path().join("a.jpg")), vec![dir.path().join("a.jpg")]);
+        let b = dir.path().join("b.JPG");
+        assert_eq!(files_to_delete(&b), vec![b.clone(), dir.path().join("b.txt")]);
+    }
 
     // ---- clamp_thumb_edge ----
 

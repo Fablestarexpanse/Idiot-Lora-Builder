@@ -237,7 +237,7 @@ export function FindDuplicatesModal({ isOpen, onClose }: FindDuplicatesModalProp
     setPendingDelete({
       paths: [toAbsolute(relPath)],
       message:
-        `Delete "${relPath}" from the folder? The file and its caption will be removed. This cannot be undone.`,
+        `Delete "${relPath}" from the folder? The file and its caption are moved to the Recycle Bin.`,
     });
   }
 
@@ -257,7 +257,7 @@ export function FindDuplicatesModal({ isOpen, onClose }: FindDuplicatesModalProp
       paths: losers.map((f) => toAbsolute(f.rel)),
       message:
         `Keep "${winner.rel}" and delete the other ${losers.length} file(s) in this group? ` +
-        "The files and their captions will be removed. This cannot be undone.",
+        "The files and their captions are moved to the Recycle Bin.",
     });
   }
 

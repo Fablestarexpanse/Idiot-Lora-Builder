@@ -359,7 +359,7 @@ export function FilterBar() {
         <p className="text-sm text-gray-400">
           Delete {selectedIds.size} selected image
           {selectedIds.size === 1 ? "" : "s"} from the folder? Their caption
-          files will be removed too. This cannot be undone.
+          files go with them, to the Recycle Bin.
         </p>
       </ConfirmModal>
     </div>
