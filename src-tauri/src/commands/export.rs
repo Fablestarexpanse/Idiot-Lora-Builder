@@ -197,13 +197,42 @@ fn apply_trigger(content: &str, trigger: Option<&String>) -> String {
     }
 }
 
+/// Extension an image gets on export, when it differs from the source's.
+/// Trainers (kohya sd-scripts, AI Toolkit) don't read GIF or `.jfif`, and AI Toolkit
+/// skips BMP: GIF/BMP are re-encoded to PNG (see `read_for_export`), `.jfif` is
+/// already JPEG data so it only needs the `.jpg` name.
+fn export_ext_override(img: &Path) -> Option<&'static str> {
+    let ext = img.extension()?.to_str()?.to_ascii_lowercase();
+    match ext.as_str() {
+        "gif" | "bmp" => Some("png"),
+        "jfif" => Some("jpg"),
+        _ => None,
+    }
+}
+
+/// Image bytes to write on export: unchanged, or re-encoded to PNG for GIF/BMP
+/// (an animated GIF keeps only its first frame).
+fn read_for_export(img: &Path) -> Result<Vec<u8>, String> {
+    if export_ext_override(img) != Some("png") {
+        return fs::read(img).map_err(|e| e.to_string());
+    }
+    let decoded = image::open(img).map_err(|e| e.to_string())?;
+    let mut out = std::io::Cursor::new(Vec::new());
+    decoded
+        .write_to(&mut out, image::ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    Ok(out.into_inner())
+}
+
 fn output_name(img: &Path, index: usize, sequential: bool, used: &mut HashSet<String>) -> String {
-    let ext = img.extension().and_then(|e| e.to_str()).unwrap_or("png");
+    let ext = export_ext_override(img)
+        .or_else(|| img.extension().and_then(|e| e.to_str()))
+        .unwrap_or("png");
     let name = if sequential {
         format!("{:04}.{}", index + 1, ext)
     } else {
         img.file_name()
-            .map(|n| n.to_string_lossy().into_owned())
+            .map(|n| Path::new(n).with_extension(ext).to_string_lossy().into_owned())
             .unwrap_or_else(|| "image.png".to_string())
     };
     unique_name(&name, used)
@@ -258,7 +287,7 @@ fn export_folder(
         let name = output_name(img, i, opt.sequential_naming, &mut used_names);
 
         let dest_img = dest.join(&name);
-        if let Err(e) = fs::copy(img, &dest_img) {
+        if let Err(e) = read_for_export(img).and_then(|d| fs::write(&dest_img, d).map_err(|e| e.to_string())) {
             errors.push(format!("Failed to copy {}: {}", img.display(), e));
             skipped += 1;
             continue;
@@ -318,7 +347,7 @@ fn export_zip(
     for (i, img) in images.iter().enumerate() {
         let name = output_name(img, i, opt.sequential_naming, &mut used_names);
 
-        let data = match fs::read(img) {
+        let data = match read_for_export(img) {
             Ok(d) => d,
             Err(e) => {
                 errors.push(format!("Failed to read {}: {}", img.display(), e));
@@ -469,7 +498,7 @@ fn export_by_rating_sync(options: ExportByRatingOptions) -> Result<ExportResult,
             let name = output_name(img, i, options.sequential_naming, &mut used_names);
 
             let dest_img = sub.join(&name);
-            if let Err(e) = fs::copy(img, &dest_img) {
+            if let Err(e) = read_for_export(img).and_then(|d| fs::write(&dest_img, d).map_err(|e| e.to_string())) {
                 errors.push(format!("Failed to copy {}: {}", img.display(), e));
                 total_skipped += 1;
                 continue;
@@ -512,6 +541,37 @@ mod tests {
         assert_eq!(export_dataset_sync(options).unwrap().exported_count,1);
         let options:ExportByRatingOptions=serde_json::from_value(serde_json::json!({"source_path":source.path(),"dest_path":out.path().join("rated")})).unwrap();
         assert_eq!(export_by_rating_sync(options).unwrap().exported_count,1);
+    }
+
+    #[test]
+    fn export_converts_formats_trainers_cannot_read() {
+        let source = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        for name in ["anim.gif", "scan.bmp", "photo.jfif", "keep.PNG"] {
+            image::RgbImage::new(4, 4).save(source.path().join(name)).unwrap();
+            std::fs::write(source.path().join(name).with_extension("txt"), name).unwrap();
+        }
+        let options: ExportOptions = serde_json::from_value(serde_json::json!({
+            "source_path": source.path(), "dest_path": out.path()
+        }))
+        .unwrap();
+        let result = export_dataset_sync(options).unwrap();
+        assert_eq!((result.exported_count, result.errors.len()), (4, 0));
+        for (img, caption) in [("anim.png", "anim.gif"), ("scan.png", "scan.bmp"), ("photo.jpg", "photo.jfif"), ("keep.PNG", "keep.PNG")] {
+            let reader = image::ImageReader::open(out.path().join(img)).unwrap().with_guessed_format().unwrap();
+            let expected = if img.ends_with(".jpg") { image::ImageFormat::Jpeg } else { image::ImageFormat::Png };
+            assert_eq!(reader.format(), Some(expected), "{img}");
+            let txt = Path::new(img).with_extension("txt");
+            assert_eq!(std::fs::read_to_string(out.path().join(txt)).unwrap(), caption);
+        }
+    }
+
+    #[test]
+    fn sequential_names_use_the_export_extension() {
+        let mut used = HashSet::new();
+        assert_eq!(output_name(Path::new("x/a.gif"), 0, true, &mut used), "0001.png");
+        assert_eq!(output_name(Path::new("x/b.JFIF"), 1, true, &mut used), "0002.jpg");
+        assert_eq!(output_name(Path::new("x/c.webp"), 2, true, &mut used), "0003.webp");
     }
 
 

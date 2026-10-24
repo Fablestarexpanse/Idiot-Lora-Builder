@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Extensions recognized as project images (lowercase).
-pub const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp"];
+pub const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "jfif", "webp", "gif", "bmp"];
 
 /// Whether a path has one of the recognized image extensions (case-insensitive).
 pub fn is_image_path(path: &Path) -> bool {
